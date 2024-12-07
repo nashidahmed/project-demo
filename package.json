@@ -1,0 +1,29 @@
+{
+  "name": "project-demo",
+  "version": "0.0.1",
+  "main": "index.js",
+  "author": "Nashid",
+  "license": "MIT",
+  "scripts": {
+    "laptop": "ts-node src/Laptop.ts",
+    "pi": "ts-node src/RaspberryPi.ts"
+  },
+  "dependencies": {
+    "@hyperledger/anoncreds-nodejs": "^0.2.4",
+    "@hyperledger/aries-askar-nodejs": "^0.2.3",
+    "@hyperledger/indy-vdr-nodejs": "^0.2.2",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "typescript": "^5.7.2"
+  },
+  "devDependencies": {
+    "@credo-ts/anoncreds": "^0.5.13",
+    "@credo-ts/askar": "^0.5.13",
+    "@credo-ts/cheqd": "^0.5.13",
+    "@credo-ts/core": "^0.5.13",
+    "@credo-ts/indy-vdr": "^0.5.13",
+    "@credo-ts/node": "^0.5.13",
+    "@types/cors": "^2.8.17",
+    "ts-node": "^10.9.2"
+  }
+}
