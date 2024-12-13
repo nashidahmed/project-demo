@@ -4,30 +4,36 @@ import {
   CredentialExchangeRecord,
   CredentialState,
   CredentialStateChangedEvent,
+  ProofExchangeRecord,
 } from "@credo-ts/core";
 import { BaseAgent } from "./BaseAgent";
-import express from "express";
-import { Color, greenText, Output, purpleText, redText } from "./OutputClass";
+import express, { Application } from "express";
+import {
+  Color,
+  greenText,
+  Output,
+  purpleText,
+  redText,
+} from "./utils/OutputClass";
 import cors from "cors";
+import { createServer } from "./server";
+import {
+  credentialOfferListener,
+  deleteCredential,
+} from "./utils/credentialHelpers";
 
 export class RaspberryPiAgent extends BaseAgent {
+  private app: Application;
   public connected: boolean;
   public connectionRecordId?: string;
 
   constructor(port: number, name: string) {
     super({ port, name });
     this.connected = false;
+    this.app = createServer(4000, this.raspberryPiRoutes.bind(this));
   }
 
-  public async start() {
-    await this.initialize();
-    console.log("Raspberry Pi agent is now running on port", this.port);
-
-    // Set up REST API using Express
-    const app = express();
-    app.use(express.json());
-    app.use(cors());
-
+  private raspberryPiRoutes(app: Application) {
     // Endpoint to receive the invitation URL
     app.post("/accept-invitation", async (req, res) => {
       const { invitationUrl } = req.body;
@@ -39,7 +45,7 @@ export class RaspberryPiAgent extends BaseAgent {
       try {
         await this.acceptConnection(invitationUrl);
         if (!this.connected) return;
-        this.credentialOfferListener();
+        credentialOfferListener(this.agent);
         res.status(200).send("Invitation accepted successfully");
       } catch (error) {
         console.error("Error accepting invitation:", error);
@@ -60,6 +66,7 @@ export class RaspberryPiAgent extends BaseAgent {
 
     // Endpoint to delete credential
     app.delete("/delete-credential/:credentialId", async (req, res) => {
+      console.log("Entered deletion");
       const { credentialId } = req.params;
       if (!credentialId) {
         res.status(400).send("Missing credential ID");
@@ -67,7 +74,7 @@ export class RaspberryPiAgent extends BaseAgent {
       }
 
       try {
-        await this.deleteCredential(credentialId);
+        await deleteCredential(this.agent, credentialId);
         res.status(200).send("Credential deleted successfully");
       } catch (error) {
         console.error("Error deleting credential:", error);
@@ -75,11 +82,21 @@ export class RaspberryPiAgent extends BaseAgent {
       }
     });
 
-    this.agent.credentials.deleteById;
-
-    app.listen(4000, () => {
-      console.log("REST API running on http://localhost:4000");
+    // Endpoint to delete wallet
+    app.delete("/delete-wallet", async (req, res) => {
+      try {
+        await this.deleteWallet();
+        res.status(200).send("Deleted Wallet successfully");
+      } catch (error) {
+        console.error("Error deleting wallet:", error);
+        res.status(500).send("Error deleting wallet");
+      }
     });
+  }
+
+  public async start() {
+    await this.initialize();
+    console.log("Raspberry Pi agent is now running on port", this.port);
   }
 
   private async waitForConnection(connectionRecord: ConnectionRecord) {
@@ -108,52 +125,20 @@ export class RaspberryPiAgent extends BaseAgent {
     return connectionRecord;
   }
 
-  public async acceptCredentialOffer(
-    credentialRecord: CredentialExchangeRecord
-  ) {
-    await this.agent.credentials.acceptOffer({
-      credentialRecordId: credentialRecord.id,
-    });
-    console.log("Accepted credential with ID:", credentialRecord.id);
-  }
-
-  public async deleteCredential(credentialId: string) {
-    try {
-      await this.agent.credentials.deleteById(credentialId);
-      console.log(`Credential with ID ${credentialId} deleted successfully.`);
-    } catch (error) {
-      console.error("Error deleting credential:", error);
-      throw new Error("Credential deletion failed");
-    }
-  }
-
-  private printCredentialAttributes(
-    credentialRecord: CredentialExchangeRecord
-  ) {
-    if (credentialRecord.credentialAttributes) {
-      const attribute = credentialRecord.credentialAttributes;
-      console.log("\n\nCredential preview:");
-      attribute.forEach((element) => {
-        console.log(
-          purpleText(`${element.name} ${Color.Reset}${element.value}`)
-        );
+  public async acceptProofRequest(proofRecord: ProofExchangeRecord) {
+    const requestedCredentials =
+      await this.agent.proofs.selectCredentialsForRequest({
+        proofRecordId: proofRecord.id,
       });
-    }
-  }
 
-  public credentialOfferListener() {
-    this.agent.events.on(
-      CredentialEventTypes.CredentialStateChanged,
-      async ({ payload }: CredentialStateChangedEvent) => {
-        if (payload.credentialRecord.state === CredentialState.OfferReceived) {
-          this.printCredentialAttributes(payload.credentialRecord);
-          await this.acceptCredentialOffer(payload.credentialRecord);
-        }
-      }
-    );
+    await this.agent.proofs.acceptRequest({
+      proofRecordId: proofRecord.id,
+      proofFormats: requestedCredentials.proofFormats,
+    });
+    console.log(greenText("\nProof request accepted!\n"));
   }
 }
 
 // Start the Raspberry Pi agent
-const agent = new RaspberryPiAgent(7000, "raspberry-pi");
+const agent = new RaspberryPiAgent(4001, "pi1");
 agent.start();
