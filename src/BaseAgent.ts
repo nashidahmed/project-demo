@@ -1,37 +1,46 @@
+import type { InitConfig } from "@credo-ts/core";
+import type { IndyVdrPoolConfig } from "@credo-ts/indy-vdr";
+
 import {
   AnonCredsCredentialFormatService,
   AnonCredsModule,
   AnonCredsProofFormatService,
   LegacyIndyCredentialFormatService,
   LegacyIndyProofFormatService,
+  V1CredentialProtocol,
   V1ProofProtocol,
 } from "@credo-ts/anoncreds";
 import { AskarModule } from "@credo-ts/askar";
 import {
-  Agent,
-  AutoAcceptCredential,
-  AutoAcceptProof,
+  CheqdAnonCredsRegistry,
+  CheqdDidRegistrar,
+  CheqdDidResolver,
+  CheqdModule,
+  CheqdModuleConfig,
+} from "@credo-ts/cheqd";
+import {
   ConnectionsModule,
-  CredentialsModule,
   DidsModule,
-  HttpOutboundTransport,
-  InitConfig,
-  ProofsModule,
-  V2CredentialProtocol,
   V2ProofProtocol,
-  WsOutboundTransport,
+  V2CredentialProtocol,
+  ProofsModule,
+  AutoAcceptProof,
+  AutoAcceptCredential,
+  CredentialsModule,
+  Agent,
+  HttpOutboundTransport,
 } from "@credo-ts/core";
 import {
   IndyVdrIndyDidResolver,
   IndyVdrAnonCredsRegistry,
   IndyVdrModule,
-  IndyVdrPoolConfig,
 } from "@credo-ts/indy-vdr";
 import { agentDependencies, HttpInboundTransport } from "@credo-ts/node";
 import { anoncreds } from "@hyperledger/anoncreds-nodejs";
 import { ariesAskar } from "@hyperledger/aries-askar-nodejs";
 import { indyVdr } from "@hyperledger/indy-vdr-nodejs";
-import { InMemoryTailsFileService } from "./services/InMemoryTailsFileService";
+
+import { greenText } from "./utils/OutputClass";
 
 const bcovrin = `{"reqSignature":{},"txn":{"data":{"data":{"alias":"Node1","blskey":"4N8aUNHSgjQVgkpm8nhNEfDf6txHznoYREg9kirmJrkivgL4oSEimFF6nsQ6M41QvhM2Z33nves5vfSn9n1UwNFJBYtWVnHYMATn76vLuL3zU88KyeAYcHfsih3He6UHcXDxcaecHVz6jhCYz1P2UZn2bDVruL5wXpehgBfBaLKm3Ba","blskey_pop":"RahHYiCvoNCtPTrVtP7nMC5eTYrsUA8WjXbdhNc8debh1agE9bGiJxWBXYNFbnJXoXhWFMvyqhqhRoq737YQemH5ik9oL7R4NTTCz2LEZhkgLJzB3QRQqJyBNyv7acbdHrAT8nQ9UkLbaVL9NBpnWXBTw4LEMePaSHEw66RzPNdAX1","client_ip":"138.197.138.255","client_port":9702,"node_ip":"138.197.138.255","node_port":9701,"services":["VALIDATOR"]},"dest":"Gw6pDLhcBcoQesN72qfotTgFa7cbuqZpkX3Xo6pLhPhv"},"metadata":{"from":"Th7MpTaRZVRYnPiabds81Y"},"type":"0"},"txnMetadata":{"seqNo":1,"txnId":"fea82e10e894419fe2bea7d96296a6d46f50f93f9eeda954ec461b2ed2950b62"},"ver":"1"}
 {"reqSignature":{},"txn":{"data":{"data":{"alias":"Node2","blskey":"37rAPpXVoxzKhz7d9gkUe52XuXryuLXoM6P6LbWDB7LSbG62Lsb33sfG7zqS8TK1MXwuCHj1FKNzVpsnafmqLG1vXN88rt38mNFs9TENzm4QHdBzsvCuoBnPH7rpYYDo9DZNJePaDvRvqJKByCabubJz3XXKbEeshzpz4Ma5QYpJqjk","blskey_pop":"Qr658mWZ2YC8JXGXwMDQTzuZCWF7NK9EwxphGmcBvCh6ybUuLxbG65nsX4JvD4SPNtkJ2w9ug1yLTj6fgmuDg41TgECXjLCij3RMsV8CwewBVgVN67wsA45DFWvqvLtu4rjNnE9JbdFTc1Z4WCPA3Xan44K1HoHAq9EVeaRYs8zoF5","client_ip":"138.197.138.255","client_port":9704,"node_ip":"138.197.138.255","node_port":9703,"services":["VALIDATOR"]},"dest":"8ECVSk179mjsjKRLWiQtssMLgp6EPhWXtaYyStWPSGAb"},"metadata":{"from":"EbP4aYNeTHL6q385GuVpRV"},"type":"0"},"txnMetadata":{"seqNo":2,"txnId":"1ac8aece2a18ced660fef8694b61aac3af08ba875ce3026a160acbc3a3af35fc"},"ver":"1"}
@@ -48,13 +57,12 @@ export const indyNetworkConfig = {
 export type DemoAgent = Agent<ReturnType<typeof getAskarAnonCredsIndyModules>>;
 
 export class BaseAgent {
-  public outOfBandId?: string;
   public port: number;
   public name: string;
   public config: InitConfig;
   public agent: DemoAgent;
 
-  constructor({ port, name }: { port: number; name: string }) {
+  public constructor({ port, name }: { port: number; name: string }) {
     this.name = name;
     this.port = port;
 
@@ -69,45 +77,24 @@ export class BaseAgent {
 
     this.config = config;
 
-    // Define the agent with a lightweight transport setup for the Raspberry Pi
     this.agent = new Agent({
       config,
       dependencies: agentDependencies,
       modules: getAskarAnonCredsIndyModules(),
     });
-
-    // Register a simple `WebSocket` outbound transport
-    const wsOutbound = new WsOutboundTransport();
-    this.agent.registerOutboundTransport(wsOutbound);
-
-    // Use HTTP transport for lightweight connectivity on Raspberry Pi
-    const httpInbound = new HttpInboundTransport({ port });
-    this.agent.registerInboundTransport(httpInbound);
-
-    const httpOutbound = new HttpOutboundTransport();
-    this.agent.registerOutboundTransport(httpOutbound);
+    this.agent.registerInboundTransport(new HttpInboundTransport({ port }));
+    this.agent.registerOutboundTransport(new HttpOutboundTransport());
   }
 
-  public async initialize() {
-    // Initialize the agent, connecting and accepting messages
+  public async initializeAgent() {
     await this.agent.initialize();
+
+    console.log(greenText(`\nAgent ${this.name} created!\n`));
   }
 
   public async deleteWallet() {
     await this.agent.shutdown();
     await this.agent.wallet.delete();
-  }
-
-  public async createConnectionInvitation() {
-    // Create a connection invitation to be sent to another agent
-    const outOfBand = await this.agent.oob.createInvitation();
-    this.outOfBandId = outOfBand.id;
-    const invitationUrl = outOfBand.outOfBandInvitation.toUrl({
-      domain: `http://localhost:${this.port}`,
-    });
-    console.log("Connection invitation:", invitationUrl);
-
-    return invitationUrl;
   }
 }
 
@@ -121,8 +108,11 @@ function getAskarAnonCredsIndyModules() {
       autoAcceptConnections: true,
     }),
     credentials: new CredentialsModule({
-      autoAcceptCredentials: AutoAcceptCredential.Always,
+      autoAcceptCredentials: AutoAcceptCredential.ContentApproved,
       credentialProtocols: [
+        new V1CredentialProtocol({
+          indyCredentialFormat: legacyIndyCredentialFormatService,
+        }),
         new V2CredentialProtocol({
           credentialFormats: [
             legacyIndyCredentialFormatService,
@@ -146,16 +136,30 @@ function getAskarAnonCredsIndyModules() {
       ],
     }),
     anoncreds: new AnonCredsModule({
-      registries: [new IndyVdrAnonCredsRegistry()],
-      tailsFileService: new InMemoryTailsFileService(),
+      registries: [
+        new IndyVdrAnonCredsRegistry(),
+        new CheqdAnonCredsRegistry(),
+      ],
       anoncreds,
     }),
     indyVdr: new IndyVdrModule({
       indyVdr,
       networks: [indyNetworkConfig],
     }),
+    cheqd: new CheqdModule(
+      new CheqdModuleConfig({
+        networks: [
+          {
+            network: "testnet",
+            cosmosPayerSeed:
+              "robust across amount corn curve panther opera wish toe ring bleak empower wreck party abstract glad average muffin picnic jar squeeze annual long aunt",
+          },
+        ],
+      })
+    ),
     dids: new DidsModule({
-      resolvers: [new IndyVdrIndyDidResolver()],
+      resolvers: [new IndyVdrIndyDidResolver(), new CheqdDidResolver()],
+      registrars: [new CheqdDidRegistrar()],
     }),
     askar: new AskarModule({
       ariesAskar,

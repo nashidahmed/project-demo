@@ -1,18 +1,23 @@
-import { ConnectionRecord, ProofExchangeRecord } from "@credo-ts/core";
+import type {
+  ConnectionRecord,
+  CredentialExchangeRecord,
+  ProofExchangeRecord,
+} from "@credo-ts/core";
+
 import { BaseAgent } from "./BaseAgent";
-import { Application } from "express";
 import { greenText, Output, redText } from "./utils/OutputClass";
-import { createServer } from "./server";
-import { deleteCredential } from "./utils/credentialHelpers";
 import { Listener } from "./utils/Listener";
+import { Application } from "express";
+import { deleteCredential } from "./utils/credentialHelpers";
+import { createServer } from "./server";
 
-export class RaspberryPiAgent extends BaseAgent {
+export class Alice extends BaseAgent {
   private app: Application;
+  private listener: Listener;
   public connected: boolean;
-  public connectionRecordId?: string;
-  public listener: Listener;
+  public connectionRecordFaberId?: string;
 
-  constructor(port: number, name: string) {
+  public constructor(port: number, name: string) {
     super({ port, name });
     this.connected = false;
     this.app = createServer(4000, this.raspberryPiRoutes.bind(this));
@@ -82,9 +87,27 @@ export class RaspberryPiAgent extends BaseAgent {
     });
   }
 
-  public async start() {
-    await this.initialize();
-    console.log("Raspberry Pi agent is now running on port", this.port);
+  public static async build(): Promise<Alice> {
+    const alice = new Alice(4001, "raspberrypi");
+    await alice.initializeAgent();
+    return alice;
+  }
+
+  private async getConnectionRecord() {
+    if (!this.connectionRecordFaberId) {
+      throw Error(redText(Output.MissingConnectionRecord));
+    }
+    return await this.agent.connections.getById(this.connectionRecordFaberId);
+  }
+
+  private async receiveConnectionRequest(invitationUrl: string) {
+    const { connectionRecord } = await this.agent.oob.receiveInvitationFromUrl(
+      invitationUrl
+    );
+    if (!connectionRecord) {
+      throw new Error(redText(Output.NoConnectionRecordFromOutOfBand));
+    }
+    return connectionRecord;
   }
 
   private async waitForConnection(connectionRecord: ConnectionRecord) {
@@ -100,20 +123,50 @@ export class RaspberryPiAgent extends BaseAgent {
     const connectionRecord = await this.receiveConnectionRequest(
       invitation_url
     );
-    this.connectionRecordId = await this.waitForConnection(connectionRecord);
+    this.connectionRecordFaberId = await this.waitForConnection(
+      connectionRecord
+    );
   }
 
-  private async receiveConnectionRequest(invitationUrl: string) {
-    const { connectionRecord } = await this.agent.oob.receiveInvitationFromUrl(
-      invitationUrl
-    );
-    if (!connectionRecord) {
-      throw new Error(redText(Output.NoConnectionRecordFromOutOfBand));
-    }
-    return connectionRecord;
+  public async acceptCredentialOffer(
+    credentialRecord: CredentialExchangeRecord
+  ) {
+    await this.agent.credentials.acceptOffer({
+      credentialRecordId: credentialRecord.id,
+    });
+  }
+
+  public async acceptProofRequest(proofRecord: ProofExchangeRecord) {
+    console.log(proofRecord);
+    const requestedCredentials =
+      await this.agent.proofs.selectCredentialsForRequest({
+        proofRecordId: proofRecord.id,
+      });
+
+    console.log(requestedCredentials);
+    console.log(requestedCredentials.proofFormats.anoncreds?.attributes);
+
+    await this.agent.proofs.acceptRequest({
+      proofRecordId: proofRecord.id,
+      proofFormats: requestedCredentials.proofFormats,
+    });
+    console.log(greenText("\nProof request accepted!\n"));
+  }
+
+  public async sendMessage(message: string) {
+    const connectionRecord = await this.getConnectionRecord();
+    await this.agent.basicMessages.sendMessage(connectionRecord.id, message);
+  }
+
+  public async exit() {
+    console.log(Output.Exit);
+    await this.agent.shutdown();
+    process.exit(0);
+  }
+
+  public async restart() {
+    await this.agent.shutdown();
   }
 }
 
-// Start the Raspberry Pi agent
-const agent = new RaspberryPiAgent(4001, "pi1");
-agent.start();
+Alice.build();
