@@ -1,7 +1,14 @@
-import type { RegisterCredentialDefinitionReturnStateFinished } from "@credo-ts/anoncreds";
+import type {
+  AnonCredsCredentialFormatService,
+  AnonCredsRegisterRevocationStatusListOptions,
+  RegisterCredentialDefinitionReturnStateFinished,
+  RegisterRevocationStatusListReturnStateFinished,
+} from "@credo-ts/anoncreds";
 import type {
   ConnectionRecord,
   ConnectionStateChangedEvent,
+  OfferCredentialOptions,
+  V2CredentialProtocol,
 } from "@credo-ts/core";
 import type {
   IndyVdrRegisterSchemaOptions,
@@ -10,6 +17,7 @@ import type {
 
 import {
   ConnectionEventTypes,
+  CredoError,
   KeyType,
   TypedArrayEncoder,
   utils,
@@ -26,7 +34,6 @@ import {
 import { createServer } from "./server";
 import { Application } from "express";
 import { Listener } from "./utils/Listener";
-import { sendProofRequest } from "./utils/proofHelpers";
 import { sendInvitationToRaspberryPi } from "./utils/sendInvitation";
 
 export enum RegistryOptions {
@@ -40,6 +47,7 @@ export class Faber extends BaseAgent {
   public credentialDefinition?: RegisterCredentialDefinitionReturnStateFinished;
   public anonCredsIssuerId?: string;
   public listener: Listener;
+  public supportRevocation: boolean = true;
 
   public constructor(port: number, name: string) {
     super({ port, name });
@@ -78,11 +86,7 @@ export class Faber extends BaseAgent {
     // Endpoint to get credentials
     app.post("/send-proof", async (req, res) => {
       try {
-        const proof = await sendProofRequest(
-          this.agent,
-          this.outOfBandId!,
-          this.credentialDefinition!
-        );
+        const proof = await this.sendProofRequest();
         this.listener.proofAcceptedListener(this.agent);
         res.status(200).send(proof);
       } catch (error) {
@@ -310,7 +314,7 @@ export class Faber extends BaseAgent {
             tag: "latest",
           },
           options: {
-            supportRevocation: false,
+            supportRevocation: this.supportRevocation,
             endorserMode: "internal",
             endorserDid: this.anonCredsIssuerId,
           },
@@ -332,6 +336,63 @@ export class Faber extends BaseAgent {
     return this.credentialDefinition;
   }
 
+  public async registerRevocationRegistry() {
+    if (!this.credentialDefinition?.credentialDefinitionId) {
+      throw new Error(
+        "Missing credential definition ID for revocation registry"
+      );
+    }
+
+    console.log("\nCreating revocation registry...\n");
+
+    const { revocationRegistryDefinitionState } =
+      await this.agent.modules.anoncreds.registerRevocationRegistryDefinition({
+        revocationRegistryDefinition: {
+          issuerId: this.anonCredsIssuerId!,
+          credentialDefinitionId:
+            this.credentialDefinition.credentialDefinitionId,
+          tag: "latest",
+          maximumCredentialNumber: 10, // Maximum number of credentials that can be issued
+        },
+        options: {},
+      });
+
+    if (revocationRegistryDefinitionState.state !== "finished") {
+      throw new Error(
+        `Error creating revocation registry: ${
+          revocationRegistryDefinitionState.state === "failed"
+            ? revocationRegistryDefinitionState.reason
+            : "Not Finished"
+        }`
+      );
+    }
+
+    console.log("\nRevocation registry created successfully!\n");
+    return revocationRegistryDefinitionState;
+  }
+
+  public async registerRevocationStatusList(
+    revocationStatusList: AnonCredsRegisterRevocationStatusListOptions
+  ): Promise<RegisterRevocationStatusListReturnStateFinished> {
+    const { revocationStatusListState } =
+      await this.agent.modules.anoncreds.registerRevocationStatusList({
+        revocationStatusList,
+        options: {},
+      });
+
+    if (revocationStatusListState.state !== "finished") {
+      throw new CredoError(
+        `Revocation status list not created: ${
+          revocationStatusListState.state === "failed"
+            ? revocationStatusListState.reason
+            : "Not finished"
+        }`
+      );
+    }
+
+    return revocationStatusListState;
+  }
+
   public async issueCredential() {
     const schema = await this.registerSchema();
     const credentialDefinition = await this.registerCredentialDefinition(
@@ -339,9 +400,22 @@ export class Faber extends BaseAgent {
     );
     const connectionRecord = await this.getConnectionRecord();
 
+    let revocationRegistry;
+    if (this.supportRevocation) {
+      revocationRegistry = await this.registerRevocationRegistry();
+
+      await this.registerRevocationStatusList({
+        revocationRegistryDefinitionId:
+          revocationRegistry?.revocationRegistryDefinitionId,
+        issuerId: this.anonCredsIssuerId!,
+      });
+    }
+
     console.log("\nSending credential offer...\n");
 
-    const credential = await this.agent.credentials.offerCredential({
+    const options: OfferCredentialOptions<
+      V2CredentialProtocol<AnonCredsCredentialFormatService[]>[]
+    > = {
       connectionId: connectionRecord.id,
       protocolVersion: "v2",
       credentialFormats: {
@@ -363,7 +437,15 @@ export class Faber extends BaseAgent {
           credentialDefinitionId: credentialDefinition.credentialDefinitionId,
         },
       },
-    });
+    };
+
+    if (this.supportRevocation && options.credentialFormats.anoncreds) {
+      options.credentialFormats.anoncreds.revocationRegistryDefinitionId =
+        revocationRegistry?.revocationRegistryDefinitionId;
+      options.credentialFormats.anoncreds.revocationRegistryIndex = 1;
+    }
+
+    const credential = await this.agent.credentials.offerCredential(options);
     console.log(
       `\nCredential offer sent!\n\nGo to the Alice agent to accept the credential offer\n\n${Color.Reset}`
     );
@@ -418,6 +500,8 @@ export class Faber extends BaseAgent {
     console.log(
       `\nProof request sent!\n\nGo to the Alice agent to accept the proof request\n\n${Color.Reset}`
     );
+
+    return proof;
   }
 
   public async sendMessage(message: string) {

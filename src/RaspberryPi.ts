@@ -137,14 +137,10 @@ export class Alice extends BaseAgent {
   }
 
   public async acceptProofRequest(proofRecord: ProofExchangeRecord) {
-    console.log(proofRecord);
     const requestedCredentials =
       await this.agent.proofs.selectCredentialsForRequest({
         proofRecordId: proofRecord.id,
       });
-
-    console.log(requestedCredentials);
-    console.log(requestedCredentials.proofFormats.anoncreds?.attributes);
 
     await this.agent.proofs.acceptRequest({
       proofRecordId: proofRecord.id,
