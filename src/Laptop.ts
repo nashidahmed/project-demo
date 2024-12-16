@@ -126,7 +126,7 @@ export class LaptopAgent extends BaseAgent {
   }
 
   public async issueCredential(issuerId: string) {
-    const supportRevocation = true;
+    const supportRevocation = false;
     const { credentialDefinition, connectionRecord, revocationRegistry } =
       await setupAnonCreds(
         this.agent,

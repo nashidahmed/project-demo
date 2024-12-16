@@ -33,8 +33,9 @@ export async function setupAnonCreds(
     supportRevocation
   );
 
+  let revocationRegistry;
   if (supportRevocation) {
-    const revocationRegistry = await registerRevocationRegistry(
+    revocationRegistry = await registerRevocationRegistry(
       agent,
       issuerId,
       credentialDefinition.credentialDefinitionId
