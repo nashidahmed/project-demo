@@ -1,36 +1,22 @@
-import {
-  ConnectionRecord,
-  CredentialEventTypes,
-  CredentialExchangeRecord,
-  CredentialState,
-  CredentialStateChangedEvent,
-  ProofExchangeRecord,
-} from "@credo-ts/core";
+import { ConnectionRecord, ProofExchangeRecord } from "@credo-ts/core";
 import { BaseAgent } from "./BaseAgent";
-import express, { Application } from "express";
-import {
-  Color,
-  greenText,
-  Output,
-  purpleText,
-  redText,
-} from "./utils/OutputClass";
-import cors from "cors";
+import { Application } from "express";
+import { greenText, Output, redText } from "./utils/OutputClass";
 import { createServer } from "./server";
-import {
-  credentialOfferListener,
-  deleteCredential,
-} from "./utils/credentialHelpers";
+import { deleteCredential } from "./utils/credentialHelpers";
+import { Listener } from "./utils/Listener";
 
 export class RaspberryPiAgent extends BaseAgent {
   private app: Application;
   public connected: boolean;
   public connectionRecordId?: string;
+  public listener: Listener;
 
   constructor(port: number, name: string) {
     super({ port, name });
     this.connected = false;
     this.app = createServer(4000, this.raspberryPiRoutes.bind(this));
+    this.listener = new Listener();
   }
 
   private raspberryPiRoutes(app: Application) {
@@ -45,7 +31,9 @@ export class RaspberryPiAgent extends BaseAgent {
       try {
         await this.acceptConnection(invitationUrl);
         if (!this.connected) return;
-        credentialOfferListener(this.agent);
+
+        this.listener.credentialOfferListener(this.agent);
+        this.listener.proofRequestListener(this.agent);
         res.status(200).send("Invitation accepted successfully");
       } catch (error) {
         console.error("Error accepting invitation:", error);
@@ -123,19 +111,6 @@ export class RaspberryPiAgent extends BaseAgent {
       throw new Error(redText(Output.NoConnectionRecordFromOutOfBand));
     }
     return connectionRecord;
-  }
-
-  public async acceptProofRequest(proofRecord: ProofExchangeRecord) {
-    const requestedCredentials =
-      await this.agent.proofs.selectCredentialsForRequest({
-        proofRecordId: proofRecord.id,
-      });
-
-    await this.agent.proofs.acceptRequest({
-      proofRecordId: proofRecord.id,
-      proofFormats: requestedCredentials.proofFormats,
-    });
-    console.log(greenText("\nProof request accepted!\n"));
   }
 }
 

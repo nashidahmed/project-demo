@@ -1,8 +1,5 @@
 import {
-  CredentialEventTypes,
   CredentialExchangeRecord,
-  CredentialState,
-  CredentialStateChangedEvent,
   KeyType,
   TypedArrayEncoder,
 } from "@credo-ts/core";
@@ -76,19 +73,35 @@ export async function acceptCredentialOffer(
   await agent.credentials.acceptOffer({
     credentialRecordId: credentialRecord.id,
   });
-  console.log("Accepted credential with ID:", credentialRecord.id);
+  console.log(
+    new Date(),
+    "Accepted credential offer with ID:",
+    credentialRecord.id
+  );
 }
 
-export function credentialOfferListener(agent: DemoAgent) {
-  agent.events.on(
-    CredentialEventTypes.CredentialStateChanged,
-    async ({ payload }: CredentialStateChangedEvent) => {
-      if (payload.credentialRecord.state === CredentialState.OfferReceived) {
-        printCredentialAttributes(payload.credentialRecord);
-        await acceptCredentialOffer(agent, payload.credentialRecord);
-      }
-    }
+export async function acceptCredentialRequest(
+  agent: DemoAgent,
+  credentialRecord: CredentialExchangeRecord
+) {
+  await agent.credentials.acceptRequest({
+    credentialRecordId: credentialRecord.id,
+  });
+  console.log(
+    new Date(),
+    "Accepted credential request with ID:",
+    credentialRecord.id
   );
+}
+
+export async function acceptCredential(
+  agent: DemoAgent,
+  credentialRecord: CredentialExchangeRecord
+) {
+  await agent.credentials.acceptCredential({
+    credentialRecordId: credentialRecord.id,
+  });
+  console.log("Accepted credential with ID:", credentialRecord.id);
 }
 
 export async function importDid(agent: DemoAgent): Promise<string> {
