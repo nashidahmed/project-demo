@@ -42,6 +42,7 @@ export async function sendProofRequest(
       },
     },
   });
+  console.log(proofRecord);
   console.log(
     `\nProof request sent!\n\nGo to the Raspberry Pi agent to accept the proof request\n\n${Color.Reset}`
   );

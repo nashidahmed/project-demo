@@ -63,3 +63,10 @@ export async function registerRevocationStatusList(
 
   return revocationStatusListState;
 }
+
+// export async function revokeCredential(credentialRecord) {
+//   const credentialRevocationRegistryDefinitionId = credentialRecord.getTag(
+//     'anonCredsRevocationRegistryId'
+//   ) as string
+//   const credentialRevocationIndex = credentialRecord.getTag('anonCredsCredentialRevocationId') as string
+// }

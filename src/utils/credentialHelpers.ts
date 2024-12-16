@@ -9,7 +9,8 @@ import { Color, purpleText, redText } from "./OutputClass";
 export async function registerCredentialDefinition(
   agent: DemoAgent,
   issuerId: string,
-  schemaId: string
+  schemaId: string,
+  supportRevocation: boolean
 ) {
   if (!issuerId) {
     throw new Error(redText("Missing anoncreds issuerId"));
@@ -24,7 +25,7 @@ export async function registerCredentialDefinition(
         tag: "latest",
       },
       options: {
-        supportRevocation: true,
+        supportRevocation,
       },
     });
 

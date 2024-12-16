@@ -15,39 +15,50 @@ import { ConnectionRecord } from "@credo-ts/core";
 interface AnonCredsSetupResponse {
   credentialDefinition: RegisterCredentialDefinitionReturnStateFinished;
   connectionRecord: ConnectionRecord;
-  revocationRegistry: RegisterRevocationRegistryDefinitionReturnStateFinished;
+  revocationRegistry?: RegisterRevocationRegistryDefinitionReturnStateFinished;
 }
 
 export async function setupAnonCreds(
   agent: DemoAgent,
   issuerId: string,
-  outOfBandId: string
+  outOfBandId: string,
+  supportRevocation: boolean
 ): Promise<AnonCredsSetupResponse> {
   const schema = await registerSchema(agent, issuerId);
 
   const credentialDefinition = await registerCredentialDefinition(
     agent,
     issuerId,
-    schema.schemaId
+    schema.schemaId,
+    supportRevocation
   );
 
-  const revocationRegistry = await registerRevocationRegistry(
-    agent,
-    issuerId,
-    credentialDefinition.credentialDefinitionId
-  );
+  if (supportRevocation) {
+    const revocationRegistry = await registerRevocationRegistry(
+      agent,
+      issuerId,
+      credentialDefinition.credentialDefinitionId
+    );
 
-  await registerRevocationStatusList(agent, {
-    revocationRegistryDefinitionId:
-      revocationRegistry?.revocationRegistryDefinitionId,
-    issuerId,
-  });
+    await registerRevocationStatusList(agent, {
+      revocationRegistryDefinitionId:
+        revocationRegistry?.revocationRegistryDefinitionId,
+      issuerId,
+    });
+  }
 
   const connectionRecord = await getConnectionRecord(outOfBandId!, agent);
 
-  return {
-    credentialDefinition,
-    connectionRecord,
-    revocationRegistry,
-  };
+  if (supportRevocation) {
+    return {
+      credentialDefinition,
+      connectionRecord,
+      revocationRegistry,
+    };
+  } else {
+    return {
+      credentialDefinition,
+      connectionRecord,
+    };
+  }
 }

@@ -1,18 +1,25 @@
 import {
   AnonCredsCredentialFormatService,
   AnonCredsModule,
+  AnonCredsProofFormatService,
   LegacyIndyCredentialFormatService,
+  LegacyIndyProofFormatService,
+  V1ProofProtocol,
 } from "@credo-ts/anoncreds";
 import { AskarModule } from "@credo-ts/askar";
 import {
   Agent,
   AutoAcceptCredential,
+  AutoAcceptProof,
   ConnectionsModule,
   CredentialsModule,
   DidsModule,
   HttpOutboundTransport,
   InitConfig,
+  ProofsModule,
   V2CredentialProtocol,
+  V2ProofProtocol,
+  WsOutboundTransport,
 } from "@credo-ts/core";
 import {
   IndyVdrIndyDidResolver,
@@ -69,6 +76,10 @@ export class BaseAgent {
       modules: getAskarAnonCredsIndyModules(),
     });
 
+    // Register a simple `WebSocket` outbound transport
+    const wsOutbound = new WsOutboundTransport();
+    this.agent.registerOutboundTransport(wsOutbound);
+
     // Use HTTP transport for lightweight connectivity on Raspberry Pi
     const httpInbound = new HttpInboundTransport({ port });
     this.agent.registerInboundTransport(httpInbound);
@@ -103,6 +114,7 @@ export class BaseAgent {
 function getAskarAnonCredsIndyModules() {
   const legacyIndyCredentialFormatService =
     new LegacyIndyCredentialFormatService();
+  const legacyIndyProofFormatService = new LegacyIndyProofFormatService();
 
   return {
     connections: new ConnectionsModule({
@@ -115,6 +127,20 @@ function getAskarAnonCredsIndyModules() {
           credentialFormats: [
             legacyIndyCredentialFormatService,
             new AnonCredsCredentialFormatService(),
+          ],
+        }),
+      ],
+    }),
+    proofs: new ProofsModule({
+      autoAcceptProofs: AutoAcceptProof.ContentApproved,
+      proofProtocols: [
+        new V1ProofProtocol({
+          indyProofFormat: legacyIndyProofFormatService,
+        }),
+        new V2ProofProtocol({
+          proofFormats: [
+            legacyIndyProofFormatService,
+            new AnonCredsProofFormatService(),
           ],
         }),
       ],

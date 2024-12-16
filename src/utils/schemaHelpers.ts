@@ -10,7 +10,7 @@ export async function registerSchema(agent: DemoAgent, issuerId: string) {
   const schemaTemplate = {
     name: "IoTDeviceSchema-" + utils.uuid(),
     version: "1.0.0",
-    attrNames: ["deviceId", "deviceType", "timestamp"],
+    attrNames: ["name", "deviceType", "timestamp"],
     issuerId,
   };
 

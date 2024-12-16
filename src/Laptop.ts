@@ -1,7 +1,12 @@
-import { AutoAcceptCredential } from "@credo-ts/core";
+import {
+  AutoAcceptCredential,
+  OfferCredentialOptions,
+  V2CredentialProtocol,
+} from "@credo-ts/core";
 import { BaseAgent } from "./BaseAgent";
 import { Color } from "./utils/OutputClass";
 import {
+  AnonCredsCredentialFormatService,
   RegisterCredentialDefinitionReturnStateFinished,
   RegisterRevocationRegistryDefinitionReturnStateFinished,
 } from "@credo-ts/anoncreds";
@@ -121,12 +126,20 @@ export class LaptopAgent extends BaseAgent {
   }
 
   public async issueCredential(issuerId: string) {
+    const supportRevocation = true;
     const { credentialDefinition, connectionRecord, revocationRegistry } =
-      await setupAnonCreds(this.agent, issuerId, this.outOfBandId!);
+      await setupAnonCreds(
+        this.agent,
+        issuerId,
+        this.outOfBandId!,
+        supportRevocation
+      );
 
     console.log("\nSending credential offer...\n");
 
-    const credentialRecord = await this.agent.credentials.offerCredential({
+    const options: OfferCredentialOptions<
+      V2CredentialProtocol<AnonCredsCredentialFormatService[]>[]
+    > = {
       connectionId: connectionRecord.id,
       protocolVersion: "v2",
       autoAcceptCredential: AutoAcceptCredential.Always,
@@ -147,12 +160,19 @@ export class LaptopAgent extends BaseAgent {
             },
           ],
           credentialDefinitionId: credentialDefinition?.credentialDefinitionId,
-          revocationRegistryDefinitionId:
-            revocationRegistry?.revocationRegistryDefinitionId,
-          revocationRegistryIndex: 1,
         },
       },
-    });
+    };
+
+    if (supportRevocation && options.credentialFormats.anoncreds) {
+      options.credentialFormats.anoncreds.revocationRegistryDefinitionId =
+        revocationRegistry?.revocationRegistryDefinitionId;
+      options.credentialFormats.anoncreds.revocationRegistryIndex = 1;
+    }
+
+    const credentialRecord = await this.agent.credentials.offerCredential(
+      options
+    );
 
     console.log(
       `\nCredential offer sent!\n\nGo to the Raspberry Pi agent to accept the credential offer\n\n${Color.Reset}`
