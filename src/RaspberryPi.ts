@@ -8,7 +8,6 @@ import { BaseAgent } from "./BaseAgent";
 import { greenText, Output, redText } from "./utils/OutputClass";
 import { Listener } from "./utils/Listener";
 import { Application } from "express";
-import { deleteCredential } from "./utils/credentialHelpers";
 import { createServer } from "./server";
 
 export class Alice extends BaseAgent {
@@ -67,7 +66,7 @@ export class Alice extends BaseAgent {
       }
 
       try {
-        await deleteCredential(this.agent, credentialId);
+        await this.deleteCredential(credentialId);
         res.status(200).send("Credential deleted successfully");
       } catch (error) {
         console.error("Error deleting credential:", error);
@@ -147,6 +146,16 @@ export class Alice extends BaseAgent {
       proofFormats: requestedCredentials.proofFormats,
     });
     console.log(greenText("\nProof request accepted!\n"));
+  }
+
+  public async deleteCredential(credentialId: string) {
+    try {
+      await this.agent.credentials.deleteById(credentialId);
+      console.log(`Credential with ID ${credentialId} deleted successfully.`);
+    } catch (error) {
+      console.error("Error deleting credential:", error);
+      throw new Error("Credential deletion failed");
+    }
   }
 
   public async sendMessage(message: string) {

@@ -12,13 +12,12 @@ import {
 
 import { greenText } from "./OutputClass";
 import { DemoAgent } from "../BaseAgent";
-import {
-  acceptCredential,
-  acceptCredentialOffer,
-  acceptCredentialRequest,
-  printCredentialAttributes,
-} from "./credentialHelpers";
+
 import { acceptProofRequest } from "./proofHelpers";
+import {
+  printCredentialAttributes,
+  acceptCredentialOffer,
+} from "./credentialHelpers";
 
 export class Listener {
   public constructor() {}
@@ -28,27 +27,10 @@ export class Listener {
       CredentialEventTypes.CredentialStateChanged,
       async ({ payload }: CredentialStateChangedEvent) => {
         console.log(new Date(), payload.credentialRecord.state);
-
-        switch (payload.credentialRecord.state) {
-          case CredentialState.OfferReceived:
-            printCredentialAttributes(payload.credentialRecord);
-            await acceptCredentialOffer(agent, payload.credentialRecord);
-            break;
+        if (payload.credentialRecord.state === CredentialState.OfferReceived) {
+          printCredentialAttributes(payload.credentialRecord);
+          await acceptCredentialOffer(agent, payload.credentialRecord);
         }
-        // if (payload.credentialRecord.state === CredentialState.OfferReceived) {
-        //   printCredentialAttributes(payload.credentialRecord);
-        //   await acceptCredentialOffer(agent, payload.credentialRecord);
-        // } else if (
-        //   payload.credentialRecord.state === CredentialState.RequestReceived
-        // ) {
-        //   await acceptCredentialRequest(agent, payload.credentialRecord);
-        // } else if (
-        //   payload.credentialRecord.state === CredentialState.CredentialReceived
-        // ) {
-        //   await acceptCredential(agent, payload.credentialRecord);
-        // } else if (payload.credentialRecord.state === CredentialState.Done) {
-        //   console.log("Accepted credential");
-        // }
       }
     );
   }
