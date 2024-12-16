@@ -26,7 +26,6 @@ import {
 import { createServer } from "./server";
 import { Application } from "express";
 import { Listener } from "./utils/Listener";
-import { importDid } from "./utils/credentialHelpers";
 import { sendProofRequest } from "./utils/proofHelpers";
 import { sendInvitationToRaspberryPi } from "./utils/sendInvitation";
 
