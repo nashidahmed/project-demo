@@ -87,7 +87,7 @@ export class Alice extends BaseAgent {
   }
 
   public static async build(): Promise<Alice> {
-    const alice = new Alice(4001, "raspberrypi");
+    const alice = new Alice(4001, "raspberry-pi");
     await alice.initializeAgent();
     return alice;
   }

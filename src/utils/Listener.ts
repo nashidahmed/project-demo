@@ -10,7 +10,7 @@ import {
   ProofState,
 } from "@credo-ts/core";
 
-import { greenText } from "./OutputClass";
+import { greenText, redText } from "./OutputClass";
 import { DemoAgent } from "../BaseAgent";
 
 import { acceptProofRequest } from "./proofHelpers";
@@ -20,13 +20,14 @@ import {
 } from "./credentialHelpers";
 
 export class Listener {
+  public on: boolean = false;
+
   public constructor() {}
 
   public credentialOfferListener(agent: DemoAgent) {
     agent.events.on(
       CredentialEventTypes.CredentialStateChanged,
       async ({ payload }: CredentialStateChangedEvent) => {
-        console.log(new Date(), payload.credentialRecord.state);
         if (payload.credentialRecord.state === CredentialState.OfferReceived) {
           printCredentialAttributes(payload.credentialRecord);
           await acceptCredentialOffer(agent, payload.credentialRecord);
@@ -39,19 +40,44 @@ export class Listener {
     agent.events.on(
       ProofEventTypes.ProofStateChanged,
       async ({ payload }: ProofStateChangedEvent) => {
-        if (payload.proofRecord.state === ProofState.RequestReceived) {
-          await acceptProofRequest(agent, payload.proofRecord);
+        console.log(payload.proofRecord);
+        switch (payload.proofRecord.state) {
+          case ProofState.Abandoned:
+            console.log(
+              redText(
+                `\nProof abandoned! ${payload.proofRecord.errorMessage}\n`
+              )
+            );
+            break;
+          case ProofState.Done:
+            console.log(greenText("\nProof request accepted!\n"));
+            break;
+          case ProofState.RequestReceived:
+            await acceptProofRequest(agent, payload.proofRecord);
+            break;
         }
       }
     );
   }
 
   public proofAcceptedListener(agent: DemoAgent) {
+    this.on = true;
     agent.events.on(
       ProofEventTypes.ProofStateChanged,
       async ({ payload }: ProofStateChangedEvent) => {
-        if (payload.proofRecord.state === ProofState.Done) {
-          console.log(greenText("\nProof request accepted!\n"));
+        switch (payload.proofRecord.state) {
+          case ProofState.Done:
+            console.log(greenText("\nProof request accepted!\n"));
+            this.on = false;
+            break;
+          case ProofState.Abandoned:
+            console.log(
+              redText(
+                `\nProof abandoned! ${payload.proofRecord.errorMessage}\n`
+              )
+            );
+            this.on = false;
+            break;
         }
       }
     );

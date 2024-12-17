@@ -1,13 +1,17 @@
-import type {
-  AnonCredsCredentialFormatService,
-  AnonCredsRegisterRevocationStatusListOptions,
-  RegisterCredentialDefinitionReturnStateFinished,
-  RegisterRevocationStatusListReturnStateFinished,
+import {
+  AnonCredsRequestProofFormat,
+  dateToTimestamp,
+  type AnonCredsCredentialFormatService,
+  type AnonCredsRegisterRevocationStatusListOptions,
+  type RegisterCredentialDefinitionReturnStateFinished,
+  type RegisterRevocationStatusListReturnStateFinished,
 } from "@credo-ts/anoncreds";
 import type {
   ConnectionRecord,
   ConnectionStateChangedEvent,
+  CredentialExchangeRecord,
   OfferCredentialOptions,
+  ProofStateChangedEvent,
   V2CredentialProtocol,
 } from "@credo-ts/core";
 import type {
@@ -19,6 +23,8 @@ import {
   ConnectionEventTypes,
   CredoError,
   KeyType,
+  ProofEventTypes,
+  ProofState,
   TypedArrayEncoder,
   utils,
 } from "@credo-ts/core";
@@ -48,6 +54,7 @@ export class Faber extends BaseAgent {
   public anonCredsIssuerId?: string;
   public listener: Listener;
   public supportRevocation: boolean = true;
+  public nrpRequestedTime: number = 0;
 
   public constructor(port: number, name: string) {
     super({ port, name });
@@ -87,8 +94,21 @@ export class Faber extends BaseAgent {
     app.post("/send-proof", async (req, res) => {
       try {
         const proof = await this.sendProofRequest();
-        this.listener.proofAcceptedListener(this.agent);
-        res.status(200).send(proof);
+
+        // Wait for the event indicating proof state change
+        const proofResult = await this.waitForProofResult();
+
+        if (proofResult.state === ProofState.Done) {
+          res.status(200).send({
+            message: "Proof request accepted",
+            proof: proofResult,
+          });
+        } else if (proofResult.state === ProofState.Abandoned) {
+          res.status(400).send({
+            message: "Proof request abandoned",
+            error: proofResult.errorMessage,
+          });
+        }
       } catch (error) {
         console.error("Error sending proof request:", error);
         res.status(500).send("Error sending proof request");
@@ -117,26 +137,28 @@ export class Faber extends BaseAgent {
       }
     });
 
-    // // Endpoint to revoke credential
-    // app.post("/revoke-credential", async (req, res) => {
-    //   const { credentialRevocationId } = req.body;
-    //   if (!credentialRevocationId) {
-    //     res.status(400).send("Missing credentialRevocationId");
-    //     return;
-    //   }
+    // Endpoint to revoke credential
+    app.post("/revoke-credential", async (req, res) => {
+      const credential: {
+        _tags: {
+          anonCredsCredentialRevocationId: string;
+          anonCredsRevocationRegistryId: string;
+        };
+      } = req.body;
+      console.log(credential);
 
-    //   try {
-    //     await this.revokeCredential(credentialRevocationId);
-    //     res.status(200).send("Credential revoked successfully");
-    //   } catch (error) {
-    //     console.error("Error revoking credential:", error);
-    //     res.status(500).send("Error revoking credential");
-    //   }
-    // });
+      try {
+        await this.revokeCredential(credential);
+        res.status(200).send("Credential revoked successfully");
+      } catch (error) {
+        console.error("Error revoking credential:", error);
+        res.status(500).send("Error revoking credential");
+      }
+    });
   }
 
   public static async build(): Promise<Faber> {
-    const faber = new Faber(5001, "laptop");
+    const faber = new Faber(5001, "laptop-agent");
     await faber.initializeAgent();
     return faber;
   }
@@ -480,23 +502,30 @@ export class Faber extends BaseAgent {
     const connectionRecord = await this.getConnectionRecord();
     const proofAttribute = await this.newProofAttribute();
     await this.printProofFlow(greenText("\nRequesting proof...\n", false));
-    console.log("---------------------------------------------------");
-    console.log(connectionRecord);
-    console.log(proofAttribute);
-    console.log("---------------------------------------------------");
+
+    let requestProofFormat: AnonCredsRequestProofFormat;
+    if (this.nrpRequestedTime) {
+      requestProofFormat = {
+        non_revoked: { from: this.nrpRequestedTime, to: this.nrpRequestedTime },
+        name: "proof-request",
+        version: "1.0",
+        requested_attributes: proofAttribute,
+      };
+    } else {
+      requestProofFormat = {
+        name: "proof-request",
+        version: "1.0",
+        requested_attributes: proofAttribute,
+      };
+    }
 
     const proof = await this.agent.proofs.requestProof({
       protocolVersion: "v2",
       connectionId: connectionRecord.id,
       proofFormats: {
-        anoncreds: {
-          name: "proof-request",
-          version: "1.0",
-          requested_attributes: proofAttribute,
-        },
+        anoncreds: requestProofFormat,
       },
     });
-    console.log(proof);
     console.log(
       `\nProof request sent!\n\nGo to the Alice agent to accept the proof request\n\n${Color.Reset}`
     );
@@ -509,6 +538,43 @@ export class Faber extends BaseAgent {
     await this.agent.basicMessages.sendMessage(connectionRecord.id, message);
   }
 
+  public async revokeCredential(credential: {
+    _tags: {
+      anonCredsCredentialRevocationId: string;
+      anonCredsRevocationRegistryId: string;
+    };
+  }) {
+    const credentialRevocationRegistryDefinitionId =
+      credential._tags.anonCredsRevocationRegistryId;
+    const credentialRevocationIndex =
+      credential._tags.anonCredsCredentialRevocationId;
+
+    console.log(credentialRevocationRegistryDefinitionId);
+    console.log(credentialRevocationIndex);
+
+    console.log(`\nRevoking Credential...`);
+
+    const { revocationStatusListState } =
+      await this.agent.modules.anoncreds.updateRevocationStatusList({
+        revocationStatusList: {
+          revocationRegistryDefinitionId:
+            credentialRevocationRegistryDefinitionId,
+          revokedCredentialIndexes: [Number(credentialRevocationIndex)],
+        },
+        options: {},
+      });
+
+    console.log(revocationStatusListState.revocationStatusList);
+    const revokedTimestamp =
+      revocationStatusListState.revocationStatusList?.timestamp;
+    const nrpRequestedTime =
+      (revokedTimestamp ?? dateToTimestamp(new Date())) + 1;
+    console.log(revokedTimestamp, nrpRequestedTime);
+    this.nrpRequestedTime = nrpRequestedTime;
+
+    console.log(`\nRevoked credential!\n`);
+  }
+
   public async exit() {
     console.log(Output.Exit);
     await this.agent.shutdown();
@@ -517,6 +583,42 @@ export class Faber extends BaseAgent {
 
   public async restart() {
     await this.agent.shutdown();
+  }
+
+  public waitForProofResult(): Promise<any> {
+    return new Promise((resolve, reject) => {
+      this.agent.events.on(
+        ProofEventTypes.ProofStateChanged,
+        async ({ payload }: ProofStateChangedEvent) => {
+          const { proofRecord } = payload;
+
+          switch (proofRecord.state) {
+            case ProofState.Done:
+              console.log(greenText("\nProof request accepted!\n"));
+              resolve({
+                state: ProofState.Done,
+                proofRecord,
+              });
+              break;
+
+            case ProofState.Abandoned:
+              console.log(
+                redText(`\nProof abandoned! ${proofRecord.errorMessage}\n`)
+              );
+              resolve({
+                state: ProofState.Abandoned,
+                errorMessage: proofRecord.errorMessage,
+              });
+              break;
+          }
+        }
+      );
+
+      // Optional: Add a timeout to avoid hanging indefinitely
+      setTimeout(() => {
+        reject(new Error("Proof result timeout"));
+      }, 30000); // Adjust timeout as needed
+    });
   }
 }
 

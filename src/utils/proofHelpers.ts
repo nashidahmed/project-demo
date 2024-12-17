@@ -6,17 +6,15 @@ export async function acceptProofRequest(
   agent: DemoAgent,
   proofRecord: ProofExchangeRecord
 ) {
-  console.log(proofRecord);
   const requestedCredentials = await agent.proofs.selectCredentialsForRequest({
     proofRecordId: proofRecord.id,
+    proofFormats: { anoncreds: { filterByNonRevocationRequirements: false } },
   });
-  console.log(requestedCredentials);
 
-  const proof = await agent.proofs.acceptRequest({
+  await agent.proofs.acceptRequest({
     proofRecordId: proofRecord.id,
     proofFormats: requestedCredentials.proofFormats,
   });
-  console.log(proof);
 
   console.log(greenText("\nProof request accepted!\n"));
 }
