@@ -219,3 +219,13 @@ export async function revokeCredential(
 
   return nrpRequestedTime;
 }
+
+export async function deleteCredential(agent: DemoAgent, credentialId: string) {
+  try {
+    await agent.credentials.deleteById(credentialId);
+    console.log(`Credential with ID ${credentialId} deleted successfully.`);
+  } catch (error) {
+    console.error("Error deleting credential:", error);
+    throw new Error("Credential deletion failed");
+  }
+}

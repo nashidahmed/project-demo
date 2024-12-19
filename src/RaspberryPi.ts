@@ -9,6 +9,7 @@ import { greenText, Output, redText } from "./utils/OutputClass";
 import { Listener } from "./utils/Listener";
 import { Application } from "express";
 import { createServer } from "./server";
+import { deleteCredential } from "./utils/credential";
 
 export class Alice extends BaseAgent {
   private app: Application;
@@ -66,7 +67,7 @@ export class Alice extends BaseAgent {
       }
 
       try {
-        await this.deleteCredential(credentialId);
+        await deleteCredential(this.agent, credentialId);
         res.status(200).send("Credential deleted successfully");
       } catch (error) {
         console.error("Error deleting credential:", error);
@@ -125,26 +126,6 @@ export class Alice extends BaseAgent {
     this.connectionRecordFaberId = await this.waitForConnection(
       connectionRecord
     );
-  }
-
-  public async deleteCredential(credentialId: string) {
-    try {
-      await this.agent.credentials.deleteById(credentialId);
-      console.log(`Credential with ID ${credentialId} deleted successfully.`);
-    } catch (error) {
-      console.error("Error deleting credential:", error);
-      throw new Error("Credential deletion failed");
-    }
-  }
-
-  public async exit() {
-    console.log(Output.Exit);
-    await this.agent.shutdown();
-    process.exit(0);
-  }
-
-  public async restart() {
-    await this.agent.shutdown();
   }
 }
 
