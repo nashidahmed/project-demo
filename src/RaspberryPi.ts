@@ -127,14 +127,6 @@ export class Alice extends BaseAgent {
     );
   }
 
-  public async acceptCredentialOffer(
-    credentialRecord: CredentialExchangeRecord
-  ) {
-    await this.agent.credentials.acceptOffer({
-      credentialRecordId: credentialRecord.id,
-    });
-  }
-
   public async acceptProofRequest(proofRecord: ProofExchangeRecord) {
     const requestedCredentials =
       await this.agent.proofs.selectCredentialsForRequest({
