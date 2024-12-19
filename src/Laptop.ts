@@ -9,15 +9,11 @@ import {
 import type {
   ConnectionRecord,
   ConnectionStateChangedEvent,
-  CredentialExchangeRecord,
   OfferCredentialOptions,
   ProofStateChangedEvent,
   V2CredentialProtocol,
 } from "@credo-ts/core";
-import type {
-  IndyVdrRegisterSchemaOptions,
-  IndyVdrRegisterCredentialDefinitionOptions,
-} from "@credo-ts/indy-vdr";
+import type { IndyVdrRegisterCredentialDefinitionOptions } from "@credo-ts/indy-vdr";
 
 import {
   ConnectionEventTypes,
@@ -26,21 +22,15 @@ import {
   ProofEventTypes,
   ProofState,
   TypedArrayEncoder,
-  utils,
 } from "@credo-ts/core";
 
 import { BaseAgent, indyNetworkConfig } from "./BaseAgent";
-import {
-  Color,
-  Output,
-  greenText,
-  purpleText,
-  redText,
-} from "./utils/OutputClass";
+import { Color, Output, greenText, redText } from "./utils/OutputClass";
 import { createServer } from "./server";
 import { Application } from "express";
 import { Listener } from "./utils/Listener";
 import { sendInvitationToRaspberryPi } from "./utils/sendInvitation";
+import { registerSchema } from "./utils/schema";
 
 export enum RegistryOptions {
   indy = "did:indy",
@@ -271,56 +261,6 @@ export class Faber extends BaseAgent {
     await this.waitForConnection();
   }
 
-  private printSchema(name: string, version: string, attributes: string[]) {
-    console.log(`\n\nThe credential definition will look like this:\n`);
-    console.log(purpleText(`Name: ${Color.Reset}${name}`));
-    console.log(purpleText(`Version: ${Color.Reset}${version}`));
-    console.log(
-      purpleText(
-        `Attributes: ${Color.Reset}${attributes[0]}, ${attributes[1]}, ${attributes[2]}\n`
-      )
-    );
-  }
-
-  private async registerSchema() {
-    if (!this.anonCredsIssuerId) {
-      throw new Error(redText("Missing anoncreds issuerId"));
-    }
-    const schemaTemplate = {
-      name: "Faber College" + utils.uuid(),
-      version: "1.0.0",
-      attrNames: ["name", "type", "date"],
-      issuerId: this.anonCredsIssuerId,
-    };
-    this.printSchema(
-      schemaTemplate.name,
-      schemaTemplate.version,
-      schemaTemplate.attrNames
-    );
-    console.log(greenText("\nRegistering schema...\n", false));
-
-    const { schemaState } =
-      await this.agent.modules.anoncreds.registerSchema<IndyVdrRegisterSchemaOptions>(
-        {
-          schema: schemaTemplate,
-          options: {
-            endorserMode: "internal",
-            endorserDid: this.anonCredsIssuerId,
-          },
-        }
-      );
-
-    if (schemaState.state !== "finished") {
-      throw new Error(
-        `Error registering schema: ${
-          schemaState.state === "failed" ? schemaState.reason : "Not Finished"
-        }`
-      );
-    }
-    console.log("\nSchema registered!\n");
-    return schemaState;
-  }
-
   private async registerCredentialDefinition(schemaId: string) {
     if (!this.anonCredsIssuerId) {
       throw new Error(redText("Missing anoncreds issuerId"));
@@ -416,7 +356,7 @@ export class Faber extends BaseAgent {
   }
 
   public async issueCredential() {
-    const schema = await this.registerSchema();
+    const schema = await registerSchema(this.agent, this.anonCredsIssuerId!);
     const credentialDefinition = await this.registerCredentialDefinition(
       schema.schemaId
     );
