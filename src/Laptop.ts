@@ -289,7 +289,7 @@ export class Faber extends BaseAgent {
     const schemaTemplate = {
       name: "Faber College" + utils.uuid(),
       version: "1.0.0",
-      attrNames: ["name", "degree", "date"],
+      attrNames: ["name", "type", "date"],
       issuerId: this.anonCredsIssuerId,
     };
     this.printSchema(
@@ -445,15 +445,15 @@ export class Faber extends BaseAgent {
           attributes: [
             {
               name: "name",
-              value: "Alice Smith",
+              value: "Alexa",
             },
             {
-              name: "degree",
-              value: "Computer Science",
+              name: "type",
+              value: "Smart Assistant",
             },
             {
               name: "date",
-              value: "01/01/2022",
+              value: new Date().toISOString(),
             },
           ],
           credentialDefinitionId: credentialDefinition.credentialDefinitionId,
@@ -549,9 +549,6 @@ export class Faber extends BaseAgent {
     const credentialRevocationIndex =
       credential._tags.anonCredsCredentialRevocationId;
 
-    console.log(credentialRevocationRegistryDefinitionId);
-    console.log(credentialRevocationIndex);
-
     console.log(`\nRevoking Credential...`);
 
     const { revocationStatusListState } =
@@ -564,12 +561,10 @@ export class Faber extends BaseAgent {
         options: {},
       });
 
-    console.log(revocationStatusListState.revocationStatusList);
     const revokedTimestamp =
       revocationStatusListState.revocationStatusList?.timestamp;
     const nrpRequestedTime =
       (revokedTimestamp ?? dateToTimestamp(new Date())) + 1;
-    console.log(revokedTimestamp, nrpRequestedTime);
     this.nrpRequestedTime = nrpRequestedTime;
 
     console.log(`\nRevoked credential!\n`);

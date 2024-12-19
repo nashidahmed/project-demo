@@ -40,7 +40,6 @@ export class Listener {
     agent.events.on(
       ProofEventTypes.ProofStateChanged,
       async ({ payload }: ProofStateChangedEvent) => {
-        console.log(payload.proofRecord);
         switch (payload.proofRecord.state) {
           case ProofState.Abandoned:
             console.log(
@@ -50,7 +49,7 @@ export class Listener {
             );
             break;
           case ProofState.Done:
-            console.log(greenText("\nProof request accepted!\n"));
+            console.log(greenText("\nProof request done!\n"));
             break;
           case ProofState.RequestReceived:
             await acceptProofRequest(agent, payload.proofRecord);
