@@ -35,6 +35,7 @@ import {
   importDid,
   issueCredential,
   registerCredentialDefinition,
+  revokeCredential,
 } from "./utils/credential";
 import {
   registerRevocationRegistry,
@@ -163,7 +164,7 @@ export class Faber extends BaseAgent {
       console.log(credential);
 
       try {
-        await this.revokeCredential(credential);
+        this.nrpRequestedTime = await revokeCredential(this.agent, credential);
         res.status(200).send("Credential revoked successfully");
       } catch (error) {
         console.error("Error revoking credential:", error);
@@ -244,48 +245,6 @@ export class Faber extends BaseAgent {
     const invitationUrl = await this.printConnectionInvite();
     await sendInvitationToRaspberryPi(invitationUrl);
     await this.waitForConnection();
-  }
-
-  public async revokeCredential(credential: {
-    _tags: {
-      anonCredsCredentialRevocationId: string;
-      anonCredsRevocationRegistryId: string;
-    };
-  }) {
-    const credentialRevocationRegistryDefinitionId =
-      credential._tags.anonCredsRevocationRegistryId;
-    const credentialRevocationIndex =
-      credential._tags.anonCredsCredentialRevocationId;
-
-    console.log(`\nRevoking Credential...`);
-
-    const { revocationStatusListState } =
-      await this.agent.modules.anoncreds.updateRevocationStatusList({
-        revocationStatusList: {
-          revocationRegistryDefinitionId:
-            credentialRevocationRegistryDefinitionId,
-          revokedCredentialIndexes: [Number(credentialRevocationIndex)],
-        },
-        options: {},
-      });
-
-    const revokedTimestamp =
-      revocationStatusListState.revocationStatusList?.timestamp;
-    const nrpRequestedTime =
-      (revokedTimestamp ?? dateToTimestamp(new Date())) + 1;
-    this.nrpRequestedTime = nrpRequestedTime;
-
-    console.log(`\nRevoked credential!\n`);
-  }
-
-  public async exit() {
-    console.log(Output.Exit);
-    await this.agent.shutdown();
-    process.exit(0);
-  }
-
-  public async restart() {
-    await this.agent.shutdown();
   }
 }
 

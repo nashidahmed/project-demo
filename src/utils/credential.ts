@@ -10,7 +10,10 @@ import { Color, purpleText, redText } from "./OutputClass";
 import { RegistryOptions } from "../Laptop";
 import { IndyVdrRegisterCredentialDefinitionOptions } from "@credo-ts/indy-vdr";
 import { registerSchema } from "./schema";
-import { AnonCredsCredentialFormatService } from "@credo-ts/anoncreds";
+import {
+  AnonCredsCredentialFormatService,
+  dateToTimestamp,
+} from "@credo-ts/anoncreds";
 import {
   registerRevocationRegistry,
   registerRevocationStatusList,
@@ -179,4 +182,40 @@ export function printCredentialAttributes(
       console.log(purpleText(`${element.name} ${Color.Reset}${element.value}`));
     });
   }
+}
+
+export async function revokeCredential(
+  agent: DemoAgent,
+  credential: {
+    _tags: {
+      anonCredsCredentialRevocationId: string;
+      anonCredsRevocationRegistryId: string;
+    };
+  }
+) {
+  const credentialRevocationRegistryDefinitionId =
+    credential._tags.anonCredsRevocationRegistryId;
+  const credentialRevocationIndex =
+    credential._tags.anonCredsCredentialRevocationId;
+
+  console.log(`\nRevoking Credential...`);
+
+  const { revocationStatusListState } =
+    await agent.modules.anoncreds.updateRevocationStatusList({
+      revocationStatusList: {
+        revocationRegistryDefinitionId:
+          credentialRevocationRegistryDefinitionId,
+        revokedCredentialIndexes: [Number(credentialRevocationIndex)],
+      },
+      options: {},
+    });
+
+  const revokedTimestamp =
+    revocationStatusListState.revocationStatusList?.timestamp;
+  const nrpRequestedTime =
+    (revokedTimestamp ?? dateToTimestamp(new Date())) + 1;
+
+  console.log(`\nRevoked credential!\n`);
+
+  return nrpRequestedTime;
 }
