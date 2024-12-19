@@ -13,7 +13,7 @@ import {
 import { greenText, redText } from "./OutputClass";
 import { DemoAgent } from "../BaseAgent";
 
-import { acceptProofRequest } from "./proofHelpers";
+import { acceptProofRequest } from "./proof";
 import { printCredentialAttributes, acceptCredentialOffer } from "./credential";
 
 export class Listener {
