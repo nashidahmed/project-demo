@@ -6,7 +6,7 @@ export async function waitForConnection(agent: DemoAgent, outOfBandId: string) {
     console.log("\nNo connectionRecord ID has been set yet\n");
   }
 
-  const connectionRecord = await getConnectionRecord(outOfBandId!, agent);
+  const connectionRecord = await getConnectionRecord(agent, outOfBandId!);
 
   try {
     await agent.connections.returnWhenIsConnected(connectionRecord.id);
@@ -21,8 +21,8 @@ export async function waitForConnection(agent: DemoAgent, outOfBandId: string) {
 }
 
 export async function getConnectionRecord(
-  outOfBandId: string,
-  agent: DemoAgent
+  agent: DemoAgent,
+  outOfBandId: string
 ) {
   if (!outOfBandId) {
     throw Error(redText(Output.MissingConnectionRecord));

@@ -150,11 +150,6 @@ export class Alice extends BaseAgent {
     }
   }
 
-  public async sendMessage(message: string) {
-    const connectionRecord = await this.getConnectionRecord();
-    await this.agent.basicMessages.sendMessage(connectionRecord.id, message);
-  }
-
   public async exit() {
     console.log(Output.Exit);
     await this.agent.shutdown();

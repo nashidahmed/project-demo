@@ -31,7 +31,16 @@ import { Application } from "express";
 import { Listener } from "./utils/Listener";
 import { sendInvitationToRaspberryPi } from "./utils/sendInvitation";
 import { registerSchema } from "./utils/schema";
-import { importDid, registerCredentialDefinition } from "./utils/credential";
+import {
+  importDid,
+  issueCredential,
+  registerCredentialDefinition,
+} from "./utils/credential";
+import {
+  registerRevocationRegistry,
+  registerRevocationStatusList,
+} from "./utils/revocation";
+import { getConnectionRecord } from "./utils/connectionHelpers";
 
 export enum RegistryOptions {
   indy = "did:indy",
@@ -76,7 +85,13 @@ export class Faber extends BaseAgent {
           RegistryOptions.indy
         );
         console.log("issuing credential");
-        const credential = await this.issueCredential();
+        const { credential, credentialDefinition } = await issueCredential(
+          this.agent,
+          this.anonCredsIssuerId!,
+          this.supportRevocation,
+          this.outOfBandId!
+        );
+        this.credentialDefinition = credentialDefinition;
         res.status(200).send(credential);
       } catch (error) {
         console.error("Error issuing credential:", error);
@@ -157,22 +172,6 @@ export class Faber extends BaseAgent {
     return faber;
   }
 
-  private async getConnectionRecord() {
-    if (!this.outOfBandId) {
-      throw Error(redText(Output.MissingConnectionRecord));
-    }
-
-    const [connection] = await this.agent.connections.findAllByOutOfBandId(
-      this.outOfBandId
-    );
-
-    if (!connection) {
-      throw Error(redText(Output.MissingConnectionRecord));
-    }
-
-    return connection;
-  }
-
   private async printConnectionInvite() {
     const outOfBand = await this.agent.oob.createInvitation();
     this.outOfBandId = outOfBand.id;
@@ -241,127 +240,6 @@ export class Faber extends BaseAgent {
     await this.waitForConnection();
   }
 
-  public async registerRevocationRegistry() {
-    if (!this.credentialDefinition?.credentialDefinitionId) {
-      throw new Error(
-        "Missing credential definition ID for revocation registry"
-      );
-    }
-
-    console.log("\nCreating revocation registry...\n");
-
-    const { revocationRegistryDefinitionState } =
-      await this.agent.modules.anoncreds.registerRevocationRegistryDefinition({
-        revocationRegistryDefinition: {
-          issuerId: this.anonCredsIssuerId!,
-          credentialDefinitionId:
-            this.credentialDefinition.credentialDefinitionId,
-          tag: "latest",
-          maximumCredentialNumber: 10, // Maximum number of credentials that can be issued
-        },
-        options: {},
-      });
-
-    if (revocationRegistryDefinitionState.state !== "finished") {
-      throw new Error(
-        `Error creating revocation registry: ${
-          revocationRegistryDefinitionState.state === "failed"
-            ? revocationRegistryDefinitionState.reason
-            : "Not Finished"
-        }`
-      );
-    }
-
-    console.log("\nRevocation registry created successfully!\n");
-    return revocationRegistryDefinitionState;
-  }
-
-  public async registerRevocationStatusList(
-    revocationStatusList: AnonCredsRegisterRevocationStatusListOptions
-  ): Promise<RegisterRevocationStatusListReturnStateFinished> {
-    const { revocationStatusListState } =
-      await this.agent.modules.anoncreds.registerRevocationStatusList({
-        revocationStatusList,
-        options: {},
-      });
-
-    if (revocationStatusListState.state !== "finished") {
-      throw new CredoError(
-        `Revocation status list not created: ${
-          revocationStatusListState.state === "failed"
-            ? revocationStatusListState.reason
-            : "Not finished"
-        }`
-      );
-    }
-
-    return revocationStatusListState;
-  }
-
-  public async issueCredential() {
-    const schema = await registerSchema(this.agent, this.anonCredsIssuerId!);
-    this.credentialDefinition = await registerCredentialDefinition(
-      this.agent,
-      this.anonCredsIssuerId!,
-      schema.schemaId,
-      this.supportRevocation
-    );
-    const connectionRecord = await this.getConnectionRecord();
-
-    let revocationRegistry;
-    if (this.supportRevocation) {
-      revocationRegistry = await this.registerRevocationRegistry();
-
-      await this.registerRevocationStatusList({
-        revocationRegistryDefinitionId:
-          revocationRegistry?.revocationRegistryDefinitionId,
-        issuerId: this.anonCredsIssuerId!,
-      });
-    }
-
-    console.log("\nSending credential offer...\n");
-
-    const options: OfferCredentialOptions<
-      V2CredentialProtocol<AnonCredsCredentialFormatService[]>[]
-    > = {
-      connectionId: connectionRecord.id,
-      protocolVersion: "v2",
-      credentialFormats: {
-        anoncreds: {
-          attributes: [
-            {
-              name: "name",
-              value: "Alexa",
-            },
-            {
-              name: "type",
-              value: "Smart Assistant",
-            },
-            {
-              name: "date",
-              value: new Date().toISOString(),
-            },
-          ],
-          credentialDefinitionId:
-            this.credentialDefinition.credentialDefinitionId,
-        },
-      },
-    };
-
-    if (this.supportRevocation && options.credentialFormats.anoncreds) {
-      options.credentialFormats.anoncreds.revocationRegistryDefinitionId =
-        revocationRegistry?.revocationRegistryDefinitionId;
-      options.credentialFormats.anoncreds.revocationRegistryIndex = 1;
-    }
-
-    const credential = await this.agent.credentials.offerCredential(options);
-    console.log(
-      `\nCredential offer sent!\n\nGo to the Alice agent to accept the credential offer\n\n${Color.Reset}`
-    );
-
-    return credential;
-  }
-
   private async printProofFlow(print: string) {
     console.log(print);
     await new Promise((f) => setTimeout(f, 2000));
@@ -386,7 +264,10 @@ export class Faber extends BaseAgent {
   }
 
   public async sendProofRequest() {
-    const connectionRecord = await this.getConnectionRecord();
+    const connectionRecord = await getConnectionRecord(
+      this.agent,
+      this.outOfBandId!
+    );
     const proofAttribute = await this.newProofAttribute();
     await this.printProofFlow(greenText("\nRequesting proof...\n", false));
 
@@ -418,11 +299,6 @@ export class Faber extends BaseAgent {
     );
 
     return proof;
-  }
-
-  public async sendMessage(message: string) {
-    const connectionRecord = await this.getConnectionRecord();
-    await this.agent.basicMessages.sendMessage(connectionRecord.id, message);
   }
 
   public async revokeCredential(credential: {

@@ -1,12 +1,21 @@
 import {
   CredentialExchangeRecord,
   KeyType,
+  OfferCredentialOptions,
   TypedArrayEncoder,
+  V2CredentialProtocol,
 } from "@credo-ts/core";
 import { DemoAgent, indyNetworkConfig } from "../BaseAgent";
 import { Color, purpleText, redText } from "./OutputClass";
 import { RegistryOptions } from "../Laptop";
 import { IndyVdrRegisterCredentialDefinitionOptions } from "@credo-ts/indy-vdr";
+import { registerSchema } from "./schema";
+import { AnonCredsCredentialFormatService } from "@credo-ts/anoncreds";
+import {
+  registerRevocationRegistry,
+  registerRevocationStatusList,
+} from "./revocation";
+import { getConnectionRecord } from "./connectionHelpers";
 
 export async function importDid(agent: DemoAgent, registry: string) {
   // NOTE: we assume the did is already registered on the ledger, we just store the private key in the wallet
@@ -72,6 +81,78 @@ export async function registerCredentialDefinition(
 
   console.log("\nCredential definition registered!!\n");
   return credentialDefinitionState;
+}
+
+export async function issueCredential(
+  agent: DemoAgent,
+  issuerId: string,
+  supportRevocation: boolean,
+  outOfBandId: string
+) {
+  const schema = await registerSchema(agent, issuerId);
+  const credentialDefinition = await registerCredentialDefinition(
+    agent,
+    issuerId,
+    schema.schemaId,
+    supportRevocation
+  );
+  const connectionRecord = await getConnectionRecord(agent, outOfBandId);
+
+  let revocationRegistry;
+  if (supportRevocation) {
+    revocationRegistry = await registerRevocationRegistry(
+      agent,
+      credentialDefinition.credentialDefinitionId,
+      issuerId
+    );
+
+    await registerRevocationStatusList(agent, {
+      revocationRegistryDefinitionId:
+        revocationRegistry?.revocationRegistryDefinitionId,
+      issuerId,
+    });
+  }
+
+  console.log("\nSending credential offer...\n");
+
+  const options: OfferCredentialOptions<
+    V2CredentialProtocol<AnonCredsCredentialFormatService[]>[]
+  > = {
+    connectionId: connectionRecord.id,
+    protocolVersion: "v2",
+    credentialFormats: {
+      anoncreds: {
+        attributes: [
+          {
+            name: "name",
+            value: "Alexa",
+          },
+          {
+            name: "type",
+            value: "Smart Assistant",
+          },
+          {
+            name: "date",
+            value: new Date().toISOString(),
+          },
+        ],
+        credentialDefinitionId: credentialDefinition.credentialDefinitionId,
+      },
+    },
+  };
+
+  if (supportRevocation && options.credentialFormats.anoncreds) {
+    options.credentialFormats.anoncreds.revocationRegistryDefinitionId =
+      revocationRegistry?.revocationRegistryDefinitionId;
+    options.credentialFormats.anoncreds.revocationRegistryIndex = 1;
+  }
+
+  const credential = await agent.credentials.offerCredential(options);
+  console.log(
+    `\nCredential offer sent!\n\nGo to the Alice agent to accept the credential offer\n\n${Color.Reset}`
+  );
+
+  return { credential, credentialDefinition };
 }
 
 export async function acceptCredentialOffer(
