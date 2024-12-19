@@ -15,7 +15,7 @@ import {
   registerRevocationRegistry,
   registerRevocationStatusList,
 } from "./revocation";
-import { getConnectionRecord } from "./connectionHelpers";
+import { getConnectionRecord } from "./connection";
 
 export async function importDid(agent: DemoAgent, registry: string) {
   // NOTE: we assume the did is already registered on the ledger, we just store the private key in the wallet

@@ -40,7 +40,7 @@ import {
   registerRevocationRegistry,
   registerRevocationStatusList,
 } from "./utils/revocation";
-import { getConnectionRecord } from "./utils/connectionHelpers";
+import { getConnectionRecord } from "./utils/connection";
 
 export enum RegistryOptions {
   indy = "did:indy",
