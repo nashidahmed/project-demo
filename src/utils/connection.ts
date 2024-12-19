@@ -1,6 +1,31 @@
 import { DemoAgent } from "../BaseAgent";
 import { Output, redText } from "./OutputClass";
 
+export async function printConnectionInvite(agent: DemoAgent, port: number) {
+  const outOfBand = await agent.oob.createInvitation();
+  const outOfBandId = outOfBand.id;
+  const invitationUrl = outOfBand.outOfBandInvitation.toUrl({
+    domain: `http://localhost:${port}`,
+  });
+
+  console.log(Output.ConnectionLink, invitationUrl, "\n");
+
+  return { invitationUrl, outOfBandId };
+}
+
+export async function receiveConnectionRequest(
+  agent: DemoAgent,
+  invitationUrl: string
+) {
+  const { connectionRecord } = await agent.oob.receiveInvitationFromUrl(
+    invitationUrl
+  );
+  if (!connectionRecord) {
+    throw new Error(redText(Output.NoConnectionRecordFromOutOfBand));
+  }
+  return connectionRecord;
+}
+
 export async function waitForConnection(agent: DemoAgent, outOfBandId: string) {
   if (!outOfBandId) {
     console.log("\nNo connectionRecord ID has been set yet\n");

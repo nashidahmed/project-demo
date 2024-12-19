@@ -1,15 +1,12 @@
-import type {
-  ConnectionRecord,
-  CredentialExchangeRecord,
-  ProofExchangeRecord,
-} from "@credo-ts/core";
+import type { ConnectionRecord } from "@credo-ts/core";
 
 import { BaseAgent } from "./BaseAgent";
-import { greenText, Output, redText } from "./utils/OutputClass";
+import { greenText, Output } from "./utils/OutputClass";
 import { Listener } from "./utils/Listener";
 import { Application } from "express";
 import { createServer } from "./server";
 import { deleteCredential } from "./utils/credential";
+import { receiveConnectionRequest } from "./utils/connection";
 
 export class Alice extends BaseAgent {
   private app: Application;
@@ -93,23 +90,6 @@ export class Alice extends BaseAgent {
     return alice;
   }
 
-  private async getConnectionRecord() {
-    if (!this.connectionRecordFaberId) {
-      throw Error(redText(Output.MissingConnectionRecord));
-    }
-    return await this.agent.connections.getById(this.connectionRecordFaberId);
-  }
-
-  private async receiveConnectionRequest(invitationUrl: string) {
-    const { connectionRecord } = await this.agent.oob.receiveInvitationFromUrl(
-      invitationUrl
-    );
-    if (!connectionRecord) {
-      throw new Error(redText(Output.NoConnectionRecordFromOutOfBand));
-    }
-    return connectionRecord;
-  }
-
   private async waitForConnection(connectionRecord: ConnectionRecord) {
     connectionRecord = await this.agent.connections.returnWhenIsConnected(
       connectionRecord.id
@@ -120,7 +100,8 @@ export class Alice extends BaseAgent {
   }
 
   public async acceptConnection(invitation_url: string) {
-    const connectionRecord = await this.receiveConnectionRequest(
+    const connectionRecord = await receiveConnectionRequest(
+      this.agent,
       invitation_url
     );
     this.connectionRecordFaberId = await this.waitForConnection(

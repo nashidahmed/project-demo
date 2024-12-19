@@ -1,47 +1,23 @@
-import {
-  AnonCredsRequestProofFormat,
-  dateToTimestamp,
-  type AnonCredsCredentialFormatService,
-  type AnonCredsRegisterRevocationStatusListOptions,
-  type RegisterCredentialDefinitionReturnStateFinished,
-  type RegisterRevocationStatusListReturnStateFinished,
-} from "@credo-ts/anoncreds";
+import { type RegisterCredentialDefinitionReturnStateFinished } from "@credo-ts/anoncreds";
 import type {
   ConnectionRecord,
   ConnectionStateChangedEvent,
-  OfferCredentialOptions,
-  ProofStateChangedEvent,
-  V2CredentialProtocol,
-} from "@credo-ts/core";
-import type { IndyVdrRegisterCredentialDefinitionOptions } from "@credo-ts/indy-vdr";
-
-import {
-  ConnectionEventTypes,
-  CredoError,
-  KeyType,
-  ProofEventTypes,
-  ProofState,
-  TypedArrayEncoder,
 } from "@credo-ts/core";
 
-import { BaseAgent, indyNetworkConfig } from "./BaseAgent";
-import { Color, Output, greenText, redText } from "./utils/OutputClass";
+import { ConnectionEventTypes, ProofState } from "@credo-ts/core";
+
+import { BaseAgent } from "./BaseAgent";
+import { Output, greenText, redText } from "./utils/OutputClass";
 import { createServer } from "./server";
 import { Application } from "express";
 import { Listener } from "./utils/Listener";
 import { sendInvitationToRaspberryPi } from "./utils/sendInvitation";
-import { registerSchema } from "./utils/schema";
 import {
   importDid,
   issueCredential,
-  registerCredentialDefinition,
   revokeCredential,
 } from "./utils/credential";
-import {
-  registerRevocationRegistry,
-  registerRevocationStatusList,
-} from "./utils/revocation";
-import { getConnectionRecord } from "./utils/connection";
+import { printConnectionInvite } from "./utils/connection";
 import { sendProofRequest, waitForProofResult } from "./utils/proof";
 
 export enum RegistryOptions {
@@ -179,18 +155,6 @@ export class Faber extends BaseAgent {
     return faber;
   }
 
-  private async printConnectionInvite() {
-    const outOfBand = await this.agent.oob.createInvitation();
-    this.outOfBandId = outOfBand.id;
-    const invitationUrl = outOfBand.outOfBandInvitation.toUrl({
-      domain: `http://localhost:${this.port}`,
-    });
-
-    console.log(Output.ConnectionLink, invitationUrl, "\n");
-
-    return invitationUrl;
-  }
-
   private async waitForConnection() {
     if (!this.outOfBandId) {
       throw new Error(redText(Output.MissingConnectionRecord));
@@ -242,7 +206,11 @@ export class Faber extends BaseAgent {
   }
 
   public async setupConnection() {
-    const invitationUrl = await this.printConnectionInvite();
+    const { invitationUrl, outOfBandId } = await printConnectionInvite(
+      this.agent,
+      this.port
+    );
+    this.outOfBandId = outOfBandId;
     await sendInvitationToRaspberryPi(invitationUrl);
     await this.waitForConnection();
   }
