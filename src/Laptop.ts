@@ -31,6 +31,7 @@ import { Application } from "express";
 import { Listener } from "./utils/Listener";
 import { sendInvitationToRaspberryPi } from "./utils/sendInvitation";
 import { registerSchema } from "./utils/schema";
+import { importDid, registerCredentialDefinition } from "./utils/credential";
 
 export enum RegistryOptions {
   indy = "did:indy",
@@ -70,7 +71,10 @@ export class Faber extends BaseAgent {
     app.post("/issue-credential", async (req, res) => {
       try {
         console.log("importing did");
-        await this.importDid(RegistryOptions.indy);
+        this.anonCredsIssuerId = await importDid(
+          this.agent,
+          RegistryOptions.indy
+        );
         console.log("issuing credential");
         const credential = await this.issueCredential();
         res.status(200).send(credential);
@@ -151,30 +155,6 @@ export class Faber extends BaseAgent {
     const faber = new Faber(5001, "laptop-agent");
     await faber.initializeAgent();
     return faber;
-  }
-
-  public async importDid(registry: string) {
-    // NOTE: we assume the did is already registered on the ledger, we just store the private key in the wallet
-    // and store the existing did in the wallet
-    // indy did is based on private key (seed)
-    const unqualifiedIndyDid = "2jEvRuKmfBJTRa7QowDpNN";
-    const cheqdDid = "did:cheqd:testnet:d37eba59-513d-42d3-8f9f-d1df0548b675";
-    const indyDid = `did:indy:${indyNetworkConfig.indyNamespace}:${unqualifiedIndyDid}`;
-
-    const did = registry === RegistryOptions.indy ? indyDid : cheqdDid;
-    await this.agent.dids.import({
-      did,
-      overwrite: true,
-      privateKeys: [
-        {
-          keyType: KeyType.Ed25519,
-          privateKey: TypedArrayEncoder.fromString(
-            "afjdemoverysercure00000000000000"
-          ),
-        },
-      ],
-    });
-    this.anonCredsIssuerId = did;
   }
 
   private async getConnectionRecord() {
@@ -261,43 +241,6 @@ export class Faber extends BaseAgent {
     await this.waitForConnection();
   }
 
-  private async registerCredentialDefinition(schemaId: string) {
-    if (!this.anonCredsIssuerId) {
-      throw new Error(redText("Missing anoncreds issuerId"));
-    }
-
-    console.log("\nRegistering credential definition...\n");
-    const { credentialDefinitionState } =
-      await this.agent.modules.anoncreds.registerCredentialDefinition<IndyVdrRegisterCredentialDefinitionOptions>(
-        {
-          credentialDefinition: {
-            schemaId,
-            issuerId: this.anonCredsIssuerId,
-            tag: "latest",
-          },
-          options: {
-            supportRevocation: this.supportRevocation,
-            endorserMode: "internal",
-            endorserDid: this.anonCredsIssuerId,
-          },
-        }
-      );
-
-    if (credentialDefinitionState.state !== "finished") {
-      throw new Error(
-        `Error registering credential definition: ${
-          credentialDefinitionState.state === "failed"
-            ? credentialDefinitionState.reason
-            : "Not Finished"
-        }}`
-      );
-    }
-
-    this.credentialDefinition = credentialDefinitionState;
-    console.log("\nCredential definition registered!!\n");
-    return this.credentialDefinition;
-  }
-
   public async registerRevocationRegistry() {
     if (!this.credentialDefinition?.credentialDefinitionId) {
       throw new Error(
@@ -357,8 +300,11 @@ export class Faber extends BaseAgent {
 
   public async issueCredential() {
     const schema = await registerSchema(this.agent, this.anonCredsIssuerId!);
-    const credentialDefinition = await this.registerCredentialDefinition(
-      schema.schemaId
+    this.credentialDefinition = await registerCredentialDefinition(
+      this.agent,
+      this.anonCredsIssuerId!,
+      schema.schemaId,
+      this.supportRevocation
     );
     const connectionRecord = await this.getConnectionRecord();
 
@@ -396,7 +342,8 @@ export class Faber extends BaseAgent {
               value: new Date().toISOString(),
             },
           ],
-          credentialDefinitionId: credentialDefinition.credentialDefinitionId,
+          credentialDefinitionId:
+            this.credentialDefinition.credentialDefinitionId,
         },
       },
     };
