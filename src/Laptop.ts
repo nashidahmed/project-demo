@@ -41,6 +41,7 @@ import {
   registerRevocationStatusList,
 } from "./utils/revocation";
 import { getConnectionRecord } from "./utils/connection";
+import { sendProofRequest, waitForProofResult } from "./utils/proof";
 
 export enum RegistryOptions {
   indy = "did:indy",
@@ -102,10 +103,15 @@ export class Faber extends BaseAgent {
     // Endpoint to get credentials
     app.post("/send-proof", async (req, res) => {
       try {
-        const proof = await this.sendProofRequest();
+        const proof = await sendProofRequest(
+          this.agent,
+          this.outOfBandId!,
+          this.credentialDefinition?.credentialDefinitionId!,
+          this.nrpRequestedTime
+        );
 
         // Wait for the event indicating proof state change
-        const proofResult = await this.waitForProofResult();
+        const proofResult = await waitForProofResult(this.agent);
 
         if (proofResult.state === ProofState.Done) {
           res.status(200).send({
@@ -240,67 +246,6 @@ export class Faber extends BaseAgent {
     await this.waitForConnection();
   }
 
-  private async printProofFlow(print: string) {
-    console.log(print);
-    await new Promise((f) => setTimeout(f, 2000));
-  }
-
-  private async newProofAttribute() {
-    await this.printProofFlow(
-      greenText(`Creating new proof attribute for 'name' ...\n`)
-    );
-    const proofAttribute = {
-      name: {
-        name: "name",
-        restrictions: [
-          {
-            cred_def_id: this.credentialDefinition?.credentialDefinitionId,
-          },
-        ],
-      },
-    };
-
-    return proofAttribute;
-  }
-
-  public async sendProofRequest() {
-    const connectionRecord = await getConnectionRecord(
-      this.agent,
-      this.outOfBandId!
-    );
-    const proofAttribute = await this.newProofAttribute();
-    await this.printProofFlow(greenText("\nRequesting proof...\n", false));
-
-    let requestProofFormat: AnonCredsRequestProofFormat;
-    if (this.nrpRequestedTime) {
-      requestProofFormat = {
-        non_revoked: { from: this.nrpRequestedTime, to: this.nrpRequestedTime },
-        name: "proof-request",
-        version: "1.0",
-        requested_attributes: proofAttribute,
-      };
-    } else {
-      requestProofFormat = {
-        name: "proof-request",
-        version: "1.0",
-        requested_attributes: proofAttribute,
-      };
-    }
-
-    const proof = await this.agent.proofs.requestProof({
-      protocolVersion: "v2",
-      connectionId: connectionRecord.id,
-      proofFormats: {
-        anoncreds: requestProofFormat,
-      },
-    });
-    console.log(
-      `\nProof request sent!\n\nGo to the Alice agent to accept the proof request\n\n${Color.Reset}`
-    );
-
-    return proof;
-  }
-
   public async revokeCredential(credential: {
     _tags: {
       anonCredsCredentialRevocationId: string;
@@ -341,42 +286,6 @@ export class Faber extends BaseAgent {
 
   public async restart() {
     await this.agent.shutdown();
-  }
-
-  public waitForProofResult(): Promise<any> {
-    return new Promise((resolve, reject) => {
-      this.agent.events.on(
-        ProofEventTypes.ProofStateChanged,
-        async ({ payload }: ProofStateChangedEvent) => {
-          const { proofRecord } = payload;
-
-          switch (proofRecord.state) {
-            case ProofState.Done:
-              console.log(greenText("\nProof request accepted!\n"));
-              resolve({
-                state: ProofState.Done,
-                proofRecord,
-              });
-              break;
-
-            case ProofState.Abandoned:
-              console.log(
-                redText(`\nProof abandoned! ${proofRecord.errorMessage}\n`)
-              );
-              resolve({
-                state: ProofState.Abandoned,
-                errorMessage: proofRecord.errorMessage,
-              });
-              break;
-          }
-        }
-      );
-
-      // Optional: Add a timeout to avoid hanging indefinitely
-      setTimeout(() => {
-        reject(new Error("Proof result timeout"));
-      }, 30000); // Adjust timeout as needed
-    });
   }
 }
 

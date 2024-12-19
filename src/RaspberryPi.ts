@@ -127,19 +127,6 @@ export class Alice extends BaseAgent {
     );
   }
 
-  public async acceptProofRequest(proofRecord: ProofExchangeRecord) {
-    const requestedCredentials =
-      await this.agent.proofs.selectCredentialsForRequest({
-        proofRecordId: proofRecord.id,
-      });
-
-    await this.agent.proofs.acceptRequest({
-      proofRecordId: proofRecord.id,
-      proofFormats: requestedCredentials.proofFormats,
-    });
-    console.log(greenText("\nProof request accepted!\n"));
-  }
-
   public async deleteCredential(credentialId: string) {
     try {
       await this.agent.credentials.deleteById(credentialId);
