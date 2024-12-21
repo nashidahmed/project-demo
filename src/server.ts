@@ -1,5 +1,9 @@
+import dotenv from "dotenv";
 import express, { Application } from "express";
 import cors from "cors";
+
+// Load environment variables
+dotenv.config();
 
 export const createServer = (
   port: number,

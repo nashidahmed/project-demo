@@ -1,51 +1,27 @@
-import {
-  AnonCredsRequestProofFormat,
-  dateToTimestamp,
-  type AnonCredsCredentialFormatService,
-  type AnonCredsRegisterRevocationStatusListOptions,
-  type RegisterCredentialDefinitionReturnStateFinished,
-  type RegisterRevocationStatusListReturnStateFinished,
-} from "@credo-ts/anoncreds";
+import { type RegisterCredentialDefinitionReturnStateFinished } from "@credo-ts/anoncreds";
 import type {
   ConnectionRecord,
   ConnectionStateChangedEvent,
-  CredentialExchangeRecord,
-  OfferCredentialOptions,
-  ProofStateChangedEvent,
-  V2CredentialProtocol,
-} from "@credo-ts/core";
-import type {
-  IndyVdrRegisterSchemaOptions,
-  IndyVdrRegisterCredentialDefinitionOptions,
-} from "@credo-ts/indy-vdr";
-
-import {
-  ConnectionEventTypes,
-  CredoError,
-  KeyType,
-  ProofEventTypes,
-  ProofState,
-  TypedArrayEncoder,
-  utils,
 } from "@credo-ts/core";
 
-import { BaseAgent, indyNetworkConfig } from "./BaseAgent";
-import {
-  Color,
-  Output,
-  greenText,
-  purpleText,
-  redText,
-} from "./utils/OutputClass";
+import { ConnectionEventTypes, ProofState } from "@credo-ts/core";
+
+import { BaseAgent } from "./BaseAgent";
+import { Output, greenText, redText } from "./utils/OutputClass";
 import { createServer } from "./server";
 import { Application } from "express";
 import { Listener } from "./utils/Listener";
 import { sendInvitationToRaspberryPi } from "./utils/sendInvitation";
+import {
+  importDid,
+  issueCredential,
+  revokeCredential,
+} from "./utils/credential";
+import { printConnectionInvite } from "./utils/connection";
+import { sendProofRequest, waitForProofResult } from "./utils/proof";
 
-export enum RegistryOptions {
-  indy = "did:indy",
-  cheqd = "did:cheqd",
-}
+const laptopPort = Number(process.env.LAPTOP_PORT) || 5000;
+const laptopAgentPort = Number(process.env.LAPTOP_AGENT_PORT) || 5001;
 
 export class Faber extends BaseAgent {
   private app: Application;
@@ -58,7 +34,7 @@ export class Faber extends BaseAgent {
 
   public constructor(port: number, name: string) {
     super({ port, name });
-    this.app = createServer(5000, this.laptopRoutes.bind(this));
+    this.app = createServer(laptopPort, this.laptopRoutes.bind(this));
     this.listener = new Listener();
   }
 
@@ -80,9 +56,15 @@ export class Faber extends BaseAgent {
     app.post("/issue-credential", async (req, res) => {
       try {
         console.log("importing did");
-        await this.importDid(RegistryOptions.indy);
+        this.anonCredsIssuerId = await importDid(this.agent);
         console.log("issuing credential");
-        const credential = await this.issueCredential();
+        const { credential, credentialDefinition } = await issueCredential(
+          this.agent,
+          this.anonCredsIssuerId!,
+          this.supportRevocation,
+          this.outOfBandId!
+        );
+        this.credentialDefinition = credentialDefinition;
         res.status(200).send(credential);
       } catch (error) {
         console.error("Error issuing credential:", error);
@@ -93,10 +75,15 @@ export class Faber extends BaseAgent {
     // Endpoint to get credentials
     app.post("/send-proof", async (req, res) => {
       try {
-        const proof = await this.sendProofRequest();
+        const proof = await sendProofRequest(
+          this.agent,
+          this.outOfBandId!,
+          this.credentialDefinition?.credentialDefinitionId!,
+          this.nrpRequestedTime
+        );
 
         // Wait for the event indicating proof state change
-        const proofResult = await this.waitForProofResult();
+        const proofResult = await waitForProofResult(this.agent);
 
         if (proofResult.state === ProofState.Done) {
           res.status(200).send({
@@ -145,10 +132,9 @@ export class Faber extends BaseAgent {
           anonCredsRevocationRegistryId: string;
         };
       } = req.body;
-      console.log(credential);
 
       try {
-        await this.revokeCredential(credential);
+        this.nrpRequestedTime = await revokeCredential(this.agent, credential);
         res.status(200).send("Credential revoked successfully");
       } catch (error) {
         console.error("Error revoking credential:", error);
@@ -158,61 +144,9 @@ export class Faber extends BaseAgent {
   }
 
   public static async build(): Promise<Faber> {
-    const faber = new Faber(5001, "laptop-agent");
+    const faber = new Faber(laptopAgentPort, "laptop-agent");
     await faber.initializeAgent();
     return faber;
-  }
-
-  public async importDid(registry: string) {
-    // NOTE: we assume the did is already registered on the ledger, we just store the private key in the wallet
-    // and store the existing did in the wallet
-    // indy did is based on private key (seed)
-    const unqualifiedIndyDid = "2jEvRuKmfBJTRa7QowDpNN";
-    const cheqdDid = "did:cheqd:testnet:d37eba59-513d-42d3-8f9f-d1df0548b675";
-    const indyDid = `did:indy:${indyNetworkConfig.indyNamespace}:${unqualifiedIndyDid}`;
-
-    const did = registry === RegistryOptions.indy ? indyDid : cheqdDid;
-    await this.agent.dids.import({
-      did,
-      overwrite: true,
-      privateKeys: [
-        {
-          keyType: KeyType.Ed25519,
-          privateKey: TypedArrayEncoder.fromString(
-            "afjdemoverysercure00000000000000"
-          ),
-        },
-      ],
-    });
-    this.anonCredsIssuerId = did;
-  }
-
-  private async getConnectionRecord() {
-    if (!this.outOfBandId) {
-      throw Error(redText(Output.MissingConnectionRecord));
-    }
-
-    const [connection] = await this.agent.connections.findAllByOutOfBandId(
-      this.outOfBandId
-    );
-
-    if (!connection) {
-      throw Error(redText(Output.MissingConnectionRecord));
-    }
-
-    return connection;
-  }
-
-  private async printConnectionInvite() {
-    const outOfBand = await this.agent.oob.createInvitation();
-    this.outOfBandId = outOfBand.id;
-    const invitationUrl = outOfBand.outOfBandInvitation.toUrl({
-      domain: `http://localhost:${this.port}`,
-    });
-
-    console.log(Output.ConnectionLink, invitationUrl, "\n");
-
-    return invitationUrl;
   }
 
   private async waitForConnection() {
@@ -266,354 +200,13 @@ export class Faber extends BaseAgent {
   }
 
   public async setupConnection() {
-    const invitationUrl = await this.printConnectionInvite();
+    const { invitationUrl, outOfBandId } = await printConnectionInvite(
+      this.agent,
+      this.port
+    );
+    this.outOfBandId = outOfBandId;
     await sendInvitationToRaspberryPi(invitationUrl);
     await this.waitForConnection();
-  }
-
-  private printSchema(name: string, version: string, attributes: string[]) {
-    console.log(`\n\nThe credential definition will look like this:\n`);
-    console.log(purpleText(`Name: ${Color.Reset}${name}`));
-    console.log(purpleText(`Version: ${Color.Reset}${version}`));
-    console.log(
-      purpleText(
-        `Attributes: ${Color.Reset}${attributes[0]}, ${attributes[1]}, ${attributes[2]}\n`
-      )
-    );
-  }
-
-  private async registerSchema() {
-    if (!this.anonCredsIssuerId) {
-      throw new Error(redText("Missing anoncreds issuerId"));
-    }
-    const schemaTemplate = {
-      name: "Faber College" + utils.uuid(),
-      version: "1.0.0",
-      attrNames: ["name", "type", "date"],
-      issuerId: this.anonCredsIssuerId,
-    };
-    this.printSchema(
-      schemaTemplate.name,
-      schemaTemplate.version,
-      schemaTemplate.attrNames
-    );
-    console.log(greenText("\nRegistering schema...\n", false));
-
-    const { schemaState } =
-      await this.agent.modules.anoncreds.registerSchema<IndyVdrRegisterSchemaOptions>(
-        {
-          schema: schemaTemplate,
-          options: {
-            endorserMode: "internal",
-            endorserDid: this.anonCredsIssuerId,
-          },
-        }
-      );
-
-    if (schemaState.state !== "finished") {
-      throw new Error(
-        `Error registering schema: ${
-          schemaState.state === "failed" ? schemaState.reason : "Not Finished"
-        }`
-      );
-    }
-    console.log("\nSchema registered!\n");
-    return schemaState;
-  }
-
-  private async registerCredentialDefinition(schemaId: string) {
-    if (!this.anonCredsIssuerId) {
-      throw new Error(redText("Missing anoncreds issuerId"));
-    }
-
-    console.log("\nRegistering credential definition...\n");
-    const { credentialDefinitionState } =
-      await this.agent.modules.anoncreds.registerCredentialDefinition<IndyVdrRegisterCredentialDefinitionOptions>(
-        {
-          credentialDefinition: {
-            schemaId,
-            issuerId: this.anonCredsIssuerId,
-            tag: "latest",
-          },
-          options: {
-            supportRevocation: this.supportRevocation,
-            endorserMode: "internal",
-            endorserDid: this.anonCredsIssuerId,
-          },
-        }
-      );
-
-    if (credentialDefinitionState.state !== "finished") {
-      throw new Error(
-        `Error registering credential definition: ${
-          credentialDefinitionState.state === "failed"
-            ? credentialDefinitionState.reason
-            : "Not Finished"
-        }}`
-      );
-    }
-
-    this.credentialDefinition = credentialDefinitionState;
-    console.log("\nCredential definition registered!!\n");
-    return this.credentialDefinition;
-  }
-
-  public async registerRevocationRegistry() {
-    if (!this.credentialDefinition?.credentialDefinitionId) {
-      throw new Error(
-        "Missing credential definition ID for revocation registry"
-      );
-    }
-
-    console.log("\nCreating revocation registry...\n");
-
-    const { revocationRegistryDefinitionState } =
-      await this.agent.modules.anoncreds.registerRevocationRegistryDefinition({
-        revocationRegistryDefinition: {
-          issuerId: this.anonCredsIssuerId!,
-          credentialDefinitionId:
-            this.credentialDefinition.credentialDefinitionId,
-          tag: "latest",
-          maximumCredentialNumber: 10, // Maximum number of credentials that can be issued
-        },
-        options: {},
-      });
-
-    if (revocationRegistryDefinitionState.state !== "finished") {
-      throw new Error(
-        `Error creating revocation registry: ${
-          revocationRegistryDefinitionState.state === "failed"
-            ? revocationRegistryDefinitionState.reason
-            : "Not Finished"
-        }`
-      );
-    }
-
-    console.log("\nRevocation registry created successfully!\n");
-    return revocationRegistryDefinitionState;
-  }
-
-  public async registerRevocationStatusList(
-    revocationStatusList: AnonCredsRegisterRevocationStatusListOptions
-  ): Promise<RegisterRevocationStatusListReturnStateFinished> {
-    const { revocationStatusListState } =
-      await this.agent.modules.anoncreds.registerRevocationStatusList({
-        revocationStatusList,
-        options: {},
-      });
-
-    if (revocationStatusListState.state !== "finished") {
-      throw new CredoError(
-        `Revocation status list not created: ${
-          revocationStatusListState.state === "failed"
-            ? revocationStatusListState.reason
-            : "Not finished"
-        }`
-      );
-    }
-
-    return revocationStatusListState;
-  }
-
-  public async issueCredential() {
-    const schema = await this.registerSchema();
-    const credentialDefinition = await this.registerCredentialDefinition(
-      schema.schemaId
-    );
-    const connectionRecord = await this.getConnectionRecord();
-
-    let revocationRegistry;
-    if (this.supportRevocation) {
-      revocationRegistry = await this.registerRevocationRegistry();
-
-      await this.registerRevocationStatusList({
-        revocationRegistryDefinitionId:
-          revocationRegistry?.revocationRegistryDefinitionId,
-        issuerId: this.anonCredsIssuerId!,
-      });
-    }
-
-    console.log("\nSending credential offer...\n");
-
-    const options: OfferCredentialOptions<
-      V2CredentialProtocol<AnonCredsCredentialFormatService[]>[]
-    > = {
-      connectionId: connectionRecord.id,
-      protocolVersion: "v2",
-      credentialFormats: {
-        anoncreds: {
-          attributes: [
-            {
-              name: "name",
-              value: "Alexa",
-            },
-            {
-              name: "type",
-              value: "Smart Assistant",
-            },
-            {
-              name: "date",
-              value: new Date().toISOString(),
-            },
-          ],
-          credentialDefinitionId: credentialDefinition.credentialDefinitionId,
-        },
-      },
-    };
-
-    if (this.supportRevocation && options.credentialFormats.anoncreds) {
-      options.credentialFormats.anoncreds.revocationRegistryDefinitionId =
-        revocationRegistry?.revocationRegistryDefinitionId;
-      options.credentialFormats.anoncreds.revocationRegistryIndex = 1;
-    }
-
-    const credential = await this.agent.credentials.offerCredential(options);
-    console.log(
-      `\nCredential offer sent!\n\nGo to the Alice agent to accept the credential offer\n\n${Color.Reset}`
-    );
-
-    return credential;
-  }
-
-  private async printProofFlow(print: string) {
-    console.log(print);
-    await new Promise((f) => setTimeout(f, 2000));
-  }
-
-  private async newProofAttribute() {
-    await this.printProofFlow(
-      greenText(`Creating new proof attribute for 'name' ...\n`)
-    );
-    const proofAttribute = {
-      name: {
-        name: "name",
-        restrictions: [
-          {
-            cred_def_id: this.credentialDefinition?.credentialDefinitionId,
-          },
-        ],
-      },
-    };
-
-    return proofAttribute;
-  }
-
-  public async sendProofRequest() {
-    const connectionRecord = await this.getConnectionRecord();
-    const proofAttribute = await this.newProofAttribute();
-    await this.printProofFlow(greenText("\nRequesting proof...\n", false));
-
-    let requestProofFormat: AnonCredsRequestProofFormat;
-    if (this.nrpRequestedTime) {
-      requestProofFormat = {
-        non_revoked: { from: this.nrpRequestedTime, to: this.nrpRequestedTime },
-        name: "proof-request",
-        version: "1.0",
-        requested_attributes: proofAttribute,
-      };
-    } else {
-      requestProofFormat = {
-        name: "proof-request",
-        version: "1.0",
-        requested_attributes: proofAttribute,
-      };
-    }
-
-    const proof = await this.agent.proofs.requestProof({
-      protocolVersion: "v2",
-      connectionId: connectionRecord.id,
-      proofFormats: {
-        anoncreds: requestProofFormat,
-      },
-    });
-    console.log(
-      `\nProof request sent!\n\nGo to the Alice agent to accept the proof request\n\n${Color.Reset}`
-    );
-
-    return proof;
-  }
-
-  public async sendMessage(message: string) {
-    const connectionRecord = await this.getConnectionRecord();
-    await this.agent.basicMessages.sendMessage(connectionRecord.id, message);
-  }
-
-  public async revokeCredential(credential: {
-    _tags: {
-      anonCredsCredentialRevocationId: string;
-      anonCredsRevocationRegistryId: string;
-    };
-  }) {
-    const credentialRevocationRegistryDefinitionId =
-      credential._tags.anonCredsRevocationRegistryId;
-    const credentialRevocationIndex =
-      credential._tags.anonCredsCredentialRevocationId;
-
-    console.log(`\nRevoking Credential...`);
-
-    const { revocationStatusListState } =
-      await this.agent.modules.anoncreds.updateRevocationStatusList({
-        revocationStatusList: {
-          revocationRegistryDefinitionId:
-            credentialRevocationRegistryDefinitionId,
-          revokedCredentialIndexes: [Number(credentialRevocationIndex)],
-        },
-        options: {},
-      });
-
-    const revokedTimestamp =
-      revocationStatusListState.revocationStatusList?.timestamp;
-    const nrpRequestedTime =
-      (revokedTimestamp ?? dateToTimestamp(new Date())) + 1;
-    this.nrpRequestedTime = nrpRequestedTime;
-
-    console.log(`\nRevoked credential!\n`);
-  }
-
-  public async exit() {
-    console.log(Output.Exit);
-    await this.agent.shutdown();
-    process.exit(0);
-  }
-
-  public async restart() {
-    await this.agent.shutdown();
-  }
-
-  public waitForProofResult(): Promise<any> {
-    return new Promise((resolve, reject) => {
-      this.agent.events.on(
-        ProofEventTypes.ProofStateChanged,
-        async ({ payload }: ProofStateChangedEvent) => {
-          const { proofRecord } = payload;
-
-          switch (proofRecord.state) {
-            case ProofState.Done:
-              console.log(greenText("\nProof request accepted!\n"));
-              resolve({
-                state: ProofState.Done,
-                proofRecord,
-              });
-              break;
-
-            case ProofState.Abandoned:
-              console.log(
-                redText(`\nProof abandoned! ${proofRecord.errorMessage}\n`)
-              );
-              resolve({
-                state: ProofState.Abandoned,
-                errorMessage: proofRecord.errorMessage,
-              });
-              break;
-          }
-        }
-      );
-
-      // Optional: Add a timeout to avoid hanging indefinitely
-      setTimeout(() => {
-        reject(new Error("Proof result timeout"));
-      }, 30000); // Adjust timeout as needed
-    });
   }
 }
 

@@ -1,25 +1,25 @@
-import type {
-  ConnectionRecord,
-  CredentialExchangeRecord,
-  ProofExchangeRecord,
-} from "@credo-ts/core";
+import type { ConnectionRecord } from "@credo-ts/core";
 
 import { BaseAgent } from "./BaseAgent";
-import { greenText, Output, redText } from "./utils/OutputClass";
+import { greenText, Output } from "./utils/OutputClass";
 import { Listener } from "./utils/Listener";
 import { Application } from "express";
 import { createServer } from "./server";
+import { deleteCredential } from "./utils/credential";
+import { receiveConnectionRequest } from "./utils/connection";
+
+const laptopPort = Number(process.env.RASPBERRYPI_PORT) || 4000;
+const laptopAgentPort = Number(process.env.RASPBERRYPI_AGENT_PORT) || 4001;
 
 export class Alice extends BaseAgent {
-  private app: Application;
   private listener: Listener;
   public connected: boolean;
   public connectionRecordFaberId?: string;
 
-  public constructor(port: number, name: string) {
+  constructor(port: number, name: string) {
     super({ port, name });
     this.connected = false;
-    this.app = createServer(4000, this.raspberryPiRoutes.bind(this));
+    createServer(laptopPort, this.raspberryPiRoutes.bind(this));
     this.listener = new Listener();
   }
 
@@ -66,7 +66,7 @@ export class Alice extends BaseAgent {
       }
 
       try {
-        await this.deleteCredential(credentialId);
+        await deleteCredential(this.agent, credentialId);
         res.status(200).send("Credential deleted successfully");
       } catch (error) {
         console.error("Error deleting credential:", error);
@@ -87,26 +87,9 @@ export class Alice extends BaseAgent {
   }
 
   public static async build(): Promise<Alice> {
-    const alice = new Alice(4001, "raspberry-pi");
+    const alice = new Alice(laptopAgentPort, "raspberry-pi");
     await alice.initializeAgent();
     return alice;
-  }
-
-  private async getConnectionRecord() {
-    if (!this.connectionRecordFaberId) {
-      throw Error(redText(Output.MissingConnectionRecord));
-    }
-    return await this.agent.connections.getById(this.connectionRecordFaberId);
-  }
-
-  private async receiveConnectionRequest(invitationUrl: string) {
-    const { connectionRecord } = await this.agent.oob.receiveInvitationFromUrl(
-      invitationUrl
-    );
-    if (!connectionRecord) {
-      throw new Error(redText(Output.NoConnectionRecordFromOutOfBand));
-    }
-    return connectionRecord;
   }
 
   private async waitForConnection(connectionRecord: ConnectionRecord) {
@@ -119,58 +102,13 @@ export class Alice extends BaseAgent {
   }
 
   public async acceptConnection(invitation_url: string) {
-    const connectionRecord = await this.receiveConnectionRequest(
+    const connectionRecord = await receiveConnectionRequest(
+      this.agent,
       invitation_url
     );
     this.connectionRecordFaberId = await this.waitForConnection(
       connectionRecord
     );
-  }
-
-  public async acceptCredentialOffer(
-    credentialRecord: CredentialExchangeRecord
-  ) {
-    await this.agent.credentials.acceptOffer({
-      credentialRecordId: credentialRecord.id,
-    });
-  }
-
-  public async acceptProofRequest(proofRecord: ProofExchangeRecord) {
-    const requestedCredentials =
-      await this.agent.proofs.selectCredentialsForRequest({
-        proofRecordId: proofRecord.id,
-      });
-
-    await this.agent.proofs.acceptRequest({
-      proofRecordId: proofRecord.id,
-      proofFormats: requestedCredentials.proofFormats,
-    });
-    console.log(greenText("\nProof request accepted!\n"));
-  }
-
-  public async deleteCredential(credentialId: string) {
-    try {
-      await this.agent.credentials.deleteById(credentialId);
-      console.log(`Credential with ID ${credentialId} deleted successfully.`);
-    } catch (error) {
-      console.error("Error deleting credential:", error);
-      throw new Error("Credential deletion failed");
-    }
-  }
-
-  public async sendMessage(message: string) {
-    const connectionRecord = await this.getConnectionRecord();
-    await this.agent.basicMessages.sendMessage(connectionRecord.id, message);
-  }
-
-  public async exit() {
-    console.log(Output.Exit);
-    await this.agent.shutdown();
-    process.exit(0);
-  }
-
-  public async restart() {
-    await this.agent.shutdown();
   }
 }
 

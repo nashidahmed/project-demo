@@ -13,11 +13,8 @@ import {
 import { greenText, redText } from "./OutputClass";
 import { DemoAgent } from "../BaseAgent";
 
-import { acceptProofRequest } from "./proofHelpers";
-import {
-  printCredentialAttributes,
-  acceptCredentialOffer,
-} from "./credentialHelpers";
+import { acceptProofRequest } from "./proof";
+import { printCredentialAttributes, acceptCredentialOffer } from "./credential";
 
 export class Listener {
   public on: boolean = false;
