@@ -20,10 +20,8 @@ import {
 import { printConnectionInvite } from "./utils/connection";
 import { sendProofRequest, waitForProofResult } from "./utils/proof";
 
-export enum RegistryOptions {
-  indy = "did:indy",
-  cheqd = "did:cheqd",
-}
+const laptopPort = Number(process.env.LAPTOP_PORT) || 5000;
+const laptopAgentPort = Number(process.env.LAPTOP_AGENT_PORT) || 5001;
 
 export class Faber extends BaseAgent {
   private app: Application;
@@ -36,7 +34,7 @@ export class Faber extends BaseAgent {
 
   public constructor(port: number, name: string) {
     super({ port, name });
-    this.app = createServer(5000, this.laptopRoutes.bind(this));
+    this.app = createServer(laptopPort, this.laptopRoutes.bind(this));
     this.listener = new Listener();
   }
 
@@ -58,10 +56,7 @@ export class Faber extends BaseAgent {
     app.post("/issue-credential", async (req, res) => {
       try {
         console.log("importing did");
-        this.anonCredsIssuerId = await importDid(
-          this.agent,
-          RegistryOptions.indy
-        );
+        this.anonCredsIssuerId = await importDid(this.agent);
         console.log("issuing credential");
         const { credential, credentialDefinition } = await issueCredential(
           this.agent,
@@ -137,7 +132,6 @@ export class Faber extends BaseAgent {
           anonCredsRevocationRegistryId: string;
         };
       } = req.body;
-      console.log(credential);
 
       try {
         this.nrpRequestedTime = await revokeCredential(this.agent, credential);
@@ -150,7 +144,7 @@ export class Faber extends BaseAgent {
   }
 
   public static async build(): Promise<Faber> {
-    const faber = new Faber(5001, "laptop-agent");
+    const faber = new Faber(laptopAgentPort, "laptop-agent");
     await faber.initializeAgent();
     return faber;
   }

@@ -7,7 +7,6 @@ import {
 } from "@credo-ts/core";
 import { DemoAgent, indyNetworkConfig } from "../BaseAgent";
 import { Color, purpleText, redText } from "./OutputClass";
-import { RegistryOptions } from "../Laptop";
 import { IndyVdrRegisterCredentialDefinitionOptions } from "@credo-ts/indy-vdr";
 import { registerSchema } from "./schema";
 import {
@@ -20,15 +19,13 @@ import {
 } from "./revocation";
 import { getConnectionRecord } from "./connection";
 
-export async function importDid(agent: DemoAgent, registry: string) {
+export async function importDid(agent: DemoAgent) {
   // NOTE: we assume the did is already registered on the ledger, we just store the private key in the wallet
   // and store the existing did in the wallet
   // indy did is based on private key (seed)
   const unqualifiedIndyDid = "2jEvRuKmfBJTRa7QowDpNN";
-  const cheqdDid = "did:cheqd:testnet:d37eba59-513d-42d3-8f9f-d1df0548b675";
-  const indyDid = `did:indy:${indyNetworkConfig.indyNamespace}:${unqualifiedIndyDid}`;
+  const did = `did:indy:${indyNetworkConfig.indyNamespace}:${unqualifiedIndyDid}`;
 
-  const did = registry === RegistryOptions.indy ? indyDid : cheqdDid;
   await agent.dids.import({
     did,
     overwrite: true,

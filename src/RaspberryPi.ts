@@ -8,16 +8,18 @@ import { createServer } from "./server";
 import { deleteCredential } from "./utils/credential";
 import { receiveConnectionRequest } from "./utils/connection";
 
+const laptopPort = Number(process.env.RASPBERRYPI_PORT) || 4000;
+const laptopAgentPort = Number(process.env.RASPBERRYPI_AGENT_PORT) || 4001;
+
 export class Alice extends BaseAgent {
-  private app: Application;
   private listener: Listener;
   public connected: boolean;
   public connectionRecordFaberId?: string;
 
-  public constructor(port: number, name: string) {
+  constructor(port: number, name: string) {
     super({ port, name });
     this.connected = false;
-    this.app = createServer(4000, this.raspberryPiRoutes.bind(this));
+    createServer(laptopPort, this.raspberryPiRoutes.bind(this));
     this.listener = new Listener();
   }
 
@@ -85,7 +87,7 @@ export class Alice extends BaseAgent {
   }
 
   public static async build(): Promise<Alice> {
-    const alice = new Alice(4001, "raspberry-pi");
+    const alice = new Alice(laptopAgentPort, "raspberry-pi");
     await alice.initializeAgent();
     return alice;
   }

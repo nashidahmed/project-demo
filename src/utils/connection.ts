@@ -1,11 +1,13 @@
 import { DemoAgent } from "../BaseAgent";
 import { Output, redText } from "./OutputClass";
 
+const laptopBaseUrl = process.env.LAPTOP_BASE_URL || "localhost";
+
 export async function printConnectionInvite(agent: DemoAgent, port: number) {
   const outOfBand = await agent.oob.createInvitation();
   const outOfBandId = outOfBand.id;
   const invitationUrl = outOfBand.outOfBandInvitation.toUrl({
-    domain: `http://localhost:${port}`,
+    domain: `http://${laptopBaseUrl}:${port}`,
   });
 
   console.log(Output.ConnectionLink, invitationUrl, "\n");
