@@ -8,18 +8,19 @@ import { createServer } from "./server";
 import { deleteCredential } from "./utils/credential";
 import { receiveConnectionRequest } from "./utils/connection";
 
-const laptopPort = Number(process.env.RASPBERRYPI_PORT) || 4000;
-const laptopAgentPort = Number(process.env.RASPBERRYPI_AGENT_PORT) || 4001;
+const piPort = Number(process.env.RASPBERRYPI_PORT) || 4000;
+const piAgentPort = Number(process.env.RASPBERRYPI_AGENT_PORT) || 4001;
+const piBaseUrl = process.env.RASPBERRYPI_BASE_URL || "localhost";
 
 export class Alice extends BaseAgent {
   private listener: Listener;
   public connected: boolean;
   public connectionRecordFaberId?: string;
 
-  constructor(port: number, name: string) {
-    super({ port, name });
+  constructor(baseUrl: string, port: number, name: string) {
+    super({ baseUrl, port, name });
     this.connected = false;
-    createServer(laptopPort, this.raspberryPiRoutes.bind(this));
+    createServer(piPort, this.raspberryPiRoutes.bind(this));
     this.listener = new Listener();
   }
 
@@ -87,7 +88,7 @@ export class Alice extends BaseAgent {
   }
 
   public static async build(): Promise<Alice> {
-    const alice = new Alice(laptopAgentPort, "raspberry-pi");
+    const alice = new Alice(piBaseUrl, piAgentPort, "raspberry-pi");
     await alice.initializeAgent();
     return alice;
   }

@@ -57,17 +57,25 @@ export const indyNetworkConfig = {
 
 export type DemoAgent = Agent<ReturnType<typeof getAskarAnonCredsIndyModules>>;
 
-const laptopBaseUrl = process.env.LAPTOP_BASE_URL || "localhost";
-
 export class BaseAgent {
   public port: number;
   public name: string;
+  public baseUrl: string;
   public config: InitConfig;
   public agent: DemoAgent;
 
-  public constructor({ port, name }: { port: number; name: string }) {
+  public constructor({
+    baseUrl,
+    port,
+    name,
+  }: {
+    baseUrl: string;
+    port: number;
+    name: string;
+  }) {
     this.name = name;
     this.port = port;
+    this.baseUrl = baseUrl;
 
     const config = {
       label: name,
@@ -75,7 +83,7 @@ export class BaseAgent {
         id: name,
         key: name,
       },
-      endpoints: [`http://${laptopBaseUrl}:${this.port}`],
+      endpoints: [`http://${baseUrl}:${this.port}`],
     } satisfies InitConfig;
 
     this.config = config;

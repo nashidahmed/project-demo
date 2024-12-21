@@ -22,6 +22,7 @@ import { sendProofRequest, waitForProofResult } from "./utils/proof";
 
 const laptopPort = Number(process.env.LAPTOP_PORT) || 5000;
 const laptopAgentPort = Number(process.env.LAPTOP_AGENT_PORT) || 5001;
+const laptopBaseUrl = process.env.LAPTOP_BASE_URL || "localhost";
 
 export class Faber extends BaseAgent {
   private app: Application;
@@ -32,8 +33,8 @@ export class Faber extends BaseAgent {
   public supportRevocation: boolean = true;
   public nrpRequestedTime: number = 0;
 
-  public constructor(port: number, name: string) {
-    super({ port, name });
+  public constructor(baseUrl: string, port: number, name: string) {
+    super({ baseUrl, port, name });
     this.app = createServer(laptopPort, this.laptopRoutes.bind(this));
     this.listener = new Listener();
   }
@@ -144,7 +145,7 @@ export class Faber extends BaseAgent {
   }
 
   public static async build(): Promise<Faber> {
-    const faber = new Faber(laptopAgentPort, "laptop-agent");
+    const faber = new Faber(laptopBaseUrl, laptopAgentPort, "laptop-agent");
     await faber.initializeAgent();
     return faber;
   }
